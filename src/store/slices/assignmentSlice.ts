@@ -89,15 +89,16 @@ const getErrorMessage = (error: unknown): string => {
 
 // ─── ADMIN ASSIGNMENT THUNKS ─────────────────────────────────────────────
 
-export const fetchAssignments = createAsyncThunk<
+export const fetchAssignments = createAsyncThunk <
   Assignment[],
-  { user_id?: number; component_id?: number; status?: string }
+  { user_id?: number; component_id?: number; status?: string; station_id?: number }  // ← add
 >('assignment/fetchAssignments', async (params, { rejectWithValue }) => {
   try {
     const query = new URLSearchParams();
-    if (params.user_id) query.append('user_id', params.user_id.toString());
+    if (params.user_id)      query.append('user_id',      params.user_id.toString());
     if (params.component_id) query.append('component_id', params.component_id.toString());
-    if (params.status) query.append('status', params.status);
+    if (params.status)       query.append('status',       params.status);
+    if (params.station_id)   query.append('station_id',   params.station_id.toString());  // ← add
     const url = query.toString() ? `${ADMIN_BASE}/get?${query}` : `${ADMIN_BASE}/get`;
     const { data } = await axiosClient.get(url);
     return data.assignments as Assignment[];

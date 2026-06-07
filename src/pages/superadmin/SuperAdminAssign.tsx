@@ -49,6 +49,7 @@ interface StatsModalProps {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────
+
 interface StatusConfig {
   label: string;
   bg: string;
@@ -77,11 +78,130 @@ const STATUS_CONFIG: { [key in SuperAdminAssignment['status']]: StatusConfig } =
   },
 };
 
-
-
-
 const formatDate = (dateStr?: string) =>
   dateStr ? new Date(dateStr).toLocaleString() : 'N/A';
+
+// ─── Answer Renderer (Readable Tables) ─────────────────────────────────
+
+// Answer Viewer (Readable Tables) – corrected with no any
+const AnswerViewer: React.FC<{ answers: Record<string, unknown> }> = ({ answers }) => {
+  if (!answers || Object.keys(answers).length === 0) {
+    return <p className="text-xs italic" style={{ color: '#a8c5a0' }}>No answers provided.</p>;
+  }
+
+  type RowData = Record<string, unknown>;
+
+  const isSimple = (val: unknown): boolean =>
+    typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean';
+
+  const renderSimple = (key: string, value: unknown) => (
+    <div key={key} className="flex flex-col sm:flex-row sm:items-center py-2 border-b border-[#f0e8d6] last:border-0">
+      <span className="text-xs font-medium w-1/3 text-[#1a3d1c]">{key}</span>
+      <span className="text-sm text-[#1c1c1c] break-words">{String(value)}</span>
+    </div>
+  );
+
+  const renderObject = (key: string, obj: Record<string, unknown>) => (
+    <div key={key} className="mb-3">
+      <div className="text-xs font-semibold text-[#c9a84c] mb-1">{key}</div>
+      <div className="rounded-md overflow-hidden border border-[#d6c9a8] bg-white">
+        <div className="divide-y divide-[#f0e8d6]">
+          {Object.entries(obj).map(([k, v]) => (
+            <div key={k} className="flex flex-col sm:flex-row sm:items-center px-3 py-2">
+              <span className="text-xs font-medium w-1/3 text-[#1a3d1c]">{k}</span>
+              <span className="text-sm text-[#1c1c1c]">{String(v)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderArray = (key: string, arr: unknown[]) => {
+    if (arr.length === 0) return null;
+    const sample = arr[0];
+    if (typeof sample !== 'object' || sample === null) {
+      return (
+        <div key={key} className="mb-3">
+          <div className="text-xs font-semibold text-[#c9a84c] mb-1">{key}</div>
+          <div className="text-sm text-[#1c1c1c] bg-white p-2 rounded border border-[#d6c9a8]">
+            {arr.map((v, i) => (
+              <span key={i}>{String(v)}{i < arr.length - 1 ? ', ' : ''}</span>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    const keys = Object.keys(sample as RowData);
+    return (
+      <div key={key} className="mb-3">
+        <div className="text-xs font-semibold text-[#c9a84c] mb-1">{key}</div>
+        <div className="overflow-x-auto rounded border border-[#d6c9a8]">
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr className="bg-[#1a3d1c]">
+                {keys.map((k) => (
+                  <th key={k} className="px-3 py-2 text-left text-[#c9a84c] font-semibold border-r border-[#2c5f2e] last:border-r-0">
+                    {k}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {arr.map((row, idx) => {
+                const rowData = row as RowData;
+                return (
+                  <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-[#fdf8f0]'} style={{ borderTop: '1px solid #d6c9a8' }}>
+                    {keys.map((k) => (
+                      <td key={k} className="px-3 py-2 text-[#1c1c1c] border-r border-[#d6c9a8] last:border-r-0">
+                        {String(rowData[k] ?? '—')}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  const simpleEntries: [string, unknown][] = [];
+  const complexEntries: [string, unknown][] = [];
+
+  Object.entries(answers).forEach(([k, v]) => {
+    if (isSimple(v)) {
+      simpleEntries.push([k, v]);
+    } else if (Array.isArray(v)) {
+      complexEntries.push([k, v]);
+    } else if (v && typeof v === 'object') {
+      complexEntries.push([k, v]);
+    } else {
+      simpleEntries.push([k, v]);
+    }
+  });
+
+  return (
+    <div className="space-y-4">
+      {simpleEntries.length > 0 && (
+        <div className="rounded-lg overflow-hidden border border-[#d6c9a8] bg-white">
+          <div className="px-3 py-2 bg-[#1a3d1c]">
+            <span className="text-xs font-semibold text-[#fdf8f0]">Answers</span>
+          </div>
+          <div className="divide-y divide-[#f0e8d6]">
+            {simpleEntries.map(([k, v]) => renderSimple(k, v))}
+          </div>
+        </div>
+      )}
+      {complexEntries.map(([k, v]) => {
+        if (Array.isArray(v)) return renderArray(k, v);
+        if (v && typeof v === 'object') return renderObject(k, v as Record<string, unknown>);
+        return null;
+      })}
+    </div>
+  );
+};
 
 // ─── Assignment Card ─────────────────────────────────────────────────────
 
@@ -91,18 +211,14 @@ const AssignmentCard: React.FC<AssignmentCardProps> = ({ assignment, onView }) =
 
   return (
     <div
-      className="rounded-lg overflow-hidden transition-all"
-      style={{
-        border: '1px solid #e2e8f0',
-        background: '#ffffff',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-      }}
+      className="rounded-xl overflow-hidden transition-all hover:shadow-md"
+      style={{ border: '1.5px solid #d6c9a8', background: '#fff' }}
     >
       <div className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-sm font-semibold text-gray-900 truncate">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-semibold truncate" style={{ color: '#1a3d1c' }}>
                 {assignment.component_name}
               </h3>
               <span
@@ -113,32 +229,35 @@ const AssignmentCard: React.FC<AssignmentCardProps> = ({ assignment, onView }) =
                 {status.label}
               </span>
             </div>
-            <p className="text-xs text-gray-500 mt-0.5">{assignment.component_section}</p>
+            <p className="text-xs mt-0.5" style={{ color: '#6b7280' }}>{assignment.component_section}</p>
 
-            <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600">
-              <span>
-                <span className="text-gray-400">Inspector: </span>
-                {assignment.user_full_name}
-              </span>
-              <span>
-                <span className="text-gray-400">PJ No: </span>
-                {assignment.user_pj_number}
-              </span>
-              <span>
-                <span className="text-gray-400">Station: </span>
-                {assignment.station_name} ({assignment.station_code})
-              </span>
-              <span>
-                <span className="text-gray-400">Assigned: </span>
-                {formatDate(assignment.assigned_at)}
-              </span>
+            <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs">
+              <div>
+                <span className="text-[#a8c5a0]">Inspector: </span>
+                <span className="text-[#1a3d1c]">{assignment.user_full_name}</span>
+              </div>
+              <div>
+                <span className="text-[#a8c5a0]">PJ No: </span>
+                <span className="text-[#1a3d1c]">{assignment.user_pj_number}</span>
+              </div>
+              <div>
+                <span className="text-[#a8c5a0]">Station: </span>
+                <span className="text-[#1a3d1c]">{assignment.station_name} ({assignment.station_code})</span>
+              </div>
+              <div>
+                <span className="text-[#a8c5a0]">Assigned: </span>
+                <span className="text-[#1a3d1c]">{formatDate(assignment.assigned_at)}</span>
+              </div>
             </div>
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={onView}
-              className="p-1.5 text-gray-400 hover:text-blue-600 rounded transition-colors"
+              className="p-1.5 rounded transition-colors"
+              style={{ color: '#a8c5a0' }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = '#c9a84c')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = '#a8c5a0')}
               title="View details"
               type="button"
             >
@@ -146,7 +265,10 @@ const AssignmentCard: React.FC<AssignmentCardProps> = ({ assignment, onView }) =
             </button>
             <button
               onClick={() => setExpanded(!expanded)}
-              className="p-1.5 text-gray-400 hover:text-gray-600 rounded transition-colors"
+              className="p-1.5 rounded transition-colors"
+              style={{ color: '#a8c5a0' }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = '#1a3d1c')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = '#a8c5a0')}
               type="button"
             >
               {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
@@ -155,21 +277,23 @@ const AssignmentCard: React.FC<AssignmentCardProps> = ({ assignment, onView }) =
         </div>
 
         {expanded && (
-          <div className="mt-3 pt-3 border-t border-gray-100 space-y-1 text-xs text-gray-600">
-            <p>
-              <span className="text-gray-400">Assigned by: </span>
-              {assignment.assigned_by_name} ({assignment.assigned_by_email})
-            </p>
-            <p>
-              <span className="text-gray-400">Inspector email: </span>
-              {assignment.user_email}
-            </p>
-            {assignment.submitted_at && (
-              <p>
-                <span className="text-gray-400">Submitted: </span>
-                {formatDate(assignment.submitted_at)}
-              </p>
-            )}
+          <div className="mt-3 pt-3 border-t" style={{ borderColor: '#f0e8d6' }}>
+            <div className="space-y-1 text-xs">
+              <div>
+                <span className="text-[#a8c5a0]">Assigned by: </span>
+                <span className="text-[#1a3d1c]">{assignment.assigned_by_name} ({assignment.assigned_by_email})</span>
+              </div>
+              <div>
+                <span className="text-[#a8c5a0]">Inspector email: </span>
+                <span className="text-[#1a3d1c]">{assignment.user_email}</span>
+              </div>
+              {assignment.submitted_at && (
+                <div>
+                  <span className="text-[#a8c5a0]">Submitted: </span>
+                  <span className="text-[#1a3d1c]">{formatDate(assignment.submitted_at)}</span>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -177,7 +301,7 @@ const AssignmentCard: React.FC<AssignmentCardProps> = ({ assignment, onView }) =
   );
 };
 
-// ─── View Details Modal ──────────────────────────────────────────────────
+// ─── View Details Modal (with readable answers) ──────────────────────────
 
 const ViewDetailsModal: React.FC<ViewDetailsModalProps> = ({
   isOpen,
@@ -188,44 +312,31 @@ const ViewDetailsModal: React.FC<ViewDetailsModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 flex items-center justify-center z-50"
-      style={{ background: 'rgba(0,0,0,0.5)' }}
-    >
+    <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
       <div
-        className="rounded-lg shadow-xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col"
-        style={{ background: '#ffffff' }}
+        className="rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
+        style={{ background: '#fdf8f0', border: '1.5px solid #d6c9a8' }}
       >
-        <div
-          className="px-6 py-4 border-b flex items-center justify-between"
-          style={{ borderColor: '#e2e8f0' }}
-        >
-          <h2 className="text-xl font-semibold text-gray-900">Assignment Details</h2>
-          <button
-            onClick={onClose}
-            className="p-1 text-gray-400 hover:text-gray-600 rounded"
-            type="button"
-          >
+        <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0" style={{ borderColor: '#d6c9a8', background: '#1a3d1c' }}>
+          <h2 className="text-lg font-semibold" style={{ color: '#fdf8f0' }}>Assignment Details</h2>
+          <button onClick={onClose} className="p-1 rounded transition-colors" style={{ color: '#a8c5a0' }} onMouseEnter={(e) => (e.currentTarget.style.color = '#fdf8f0')} onMouseLeave={(e) => (e.currentTarget.style.color = '#a8c5a0')} type="button">
             <X size={20} />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {isLoading || !assignment ? (
-            <div className="flex items-center justify-center h-32">
-              <Loader2 size={20} className="animate-spin text-blue-600" />
-              <span className="ml-2 text-gray-500">Loading details...</span>
+            <div className="flex items-center justify-center py-12">
+              <Loader2 size={24} className="animate-spin" style={{ color: '#c9a84c' }} />
+              <span className="ml-2 text-sm" style={{ color: '#6b7280' }}>Loading details...</span>
             </div>
           ) : (
-            <div className="space-y-5">
+            <>
               {/* Status */}
-              <div className="flex items-center gap-2">
+              <div className="flex justify-start">
                 <span
                   className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium"
-                  style={{
-                    background: STATUS_CONFIG[assignment.status].bg,
-                    color: STATUS_CONFIG[assignment.status].text,
-                  }}
+                  style={{ background: STATUS_CONFIG[assignment.status].bg, color: STATUS_CONFIG[assignment.status].text }}
                 >
                   {STATUS_CONFIG[assignment.status].icon}
                   {STATUS_CONFIG[assignment.status].label}
@@ -234,76 +345,66 @@ const ViewDetailsModal: React.FC<ViewDetailsModalProps> = ({
 
               {/* Component */}
               <section>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
-                  Component
-                </p>
-                <p className="text-sm font-medium text-gray-900">{assignment.component_name}</p>
-                <p className="text-xs text-gray-500">{assignment.component_section}</p>
+                <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#a8c5a0' }}>Component</p>
+                <div className="rounded-lg p-3" style={{ background: '#fff', border: '1px solid #d6c9a8' }}>
+                  <p className="text-sm font-medium" style={{ color: '#1a3d1c' }}>{assignment.component_name}</p>
+                  <p className="text-xs mt-0.5" style={{ color: '#6b7280' }}>{assignment.component_section}</p>
+                </div>
               </section>
 
               {/* Inspector */}
               <section>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
-                  Inspector
-                </p>
-                <div className="grid grid-cols-2 gap-2 text-sm">
+                <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#a8c5a0' }}>Inspector</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg p-3" style={{ background: '#fff', border: '1px solid #d6c9a8' }}>
                   <div>
-                    <p className="text-xs text-gray-400">Name</p>
-                    <p className="text-gray-800">{assignment.user_full_name}</p>
+                    <p className="text-xs text-[#a8c5a0]">Name</p>
+                    <p className="text-sm text-[#1a3d1c]">{assignment.user_full_name}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400">PJ Number</p>
-                    <p className="text-gray-800">{assignment.user_pj_number}</p>
+                    <p className="text-xs text-[#a8c5a0]">PJ Number</p>
+                    <p className="text-sm text-[#1a3d1c]">{assignment.user_pj_number}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400">Email</p>
-                    <p className="text-gray-800">{assignment.user_email}</p>
+                    <p className="text-xs text-[#a8c5a0]">Email</p>
+                    <p className="text-sm text-[#1a3d1c] break-all">{assignment.user_email}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400">Station</p>
-                    <p className="text-gray-800">
-                      {assignment.station_name} ({assignment.station_code})
-                    </p>
+                    <p className="text-xs text-[#a8c5a0]">Station</p>
+                    <p className="text-sm text-[#1a3d1c]">{assignment.station_name} ({assignment.station_code})</p>
                   </div>
                 </div>
               </section>
 
               {/* Assignment Info */}
               <section>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
-                  Assignment Info
-                </p>
-                <div className="grid grid-cols-2 gap-2 text-sm">
+                <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#a8c5a0' }}>Assignment Info</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg p-3" style={{ background: '#fff', border: '1px solid #d6c9a8' }}>
                   <div>
-                    <p className="text-xs text-gray-400">Assigned By</p>
-                    <p className="text-gray-800">{assignment.assigned_by_name}</p>
-                    <p className="text-xs text-gray-500">{assignment.assigned_by_email}</p>
+                    <p className="text-xs text-[#a8c5a0]">Assigned By</p>
+                    <p className="text-sm text-[#1a3d1c]">{assignment.assigned_by_name}</p>
+                    <p className="text-xs text-[#6b7280]">{assignment.assigned_by_email}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400">Assigned At</p>
-                    <p className="text-gray-800">{formatDate(assignment.assigned_at)}</p>
+                    <p className="text-xs text-[#a8c5a0]">Assigned At</p>
+                    <p className="text-sm text-[#1a3d1c]">{formatDate(assignment.assigned_at)}</p>
                   </div>
                   {assignment.submitted_at && (
                     <div>
-                      <p className="text-xs text-gray-400">Submitted At</p>
-                      <p className="text-gray-800">{formatDate(assignment.submitted_at)}</p>
+                      <p className="text-xs text-[#a8c5a0]">Submitted At</p>
+                      <p className="text-sm text-[#1a3d1c]">{formatDate(assignment.submitted_at)}</p>
                     </div>
                   )}
                 </div>
               </section>
 
-              {/* Answers */}
+              {/* Submitted Answers */}
               {assignment.answers && Object.keys(assignment.answers).length > 0 && (
                 <section>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
-                    Submitted Answers
-                  </p>
-                  <pre className="text-xs bg-gray-50 p-3 rounded overflow-auto max-h-48">
-                    {JSON.stringify(assignment.answers, null, 2)}
-                  </pre>
+                  <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#a8c5a0' }}>Submitted Answers</p>
+                  <AnswerViewer answers={assignment.answers} />
                 </section>
               )}
-            </div>
+            </>
           )}
         </div>
       </div>
@@ -321,38 +422,28 @@ const StatsModal: React.FC<StatsModalProps> = ({ isOpen, onClose }) => {
   const overview = assignmentStats?.overview;
 
   return (
-    <div
-      className="fixed inset-0 flex items-center justify-center z-50"
-      style={{ background: 'rgba(0,0,0,0.5)' }}
-    >
+    <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
       <div
-        className="rounded-lg shadow-xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col"
-        style={{ background: '#ffffff' }}
+        className="rounded-xl shadow-xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col"
+        style={{ background: '#fdf8f0', border: '1.5px solid #d6c9a8' }}
       >
-        <div
-          className="px-6 py-4 border-b flex items-center justify-between"
-          style={{ borderColor: '#e2e8f0' }}
-        >
-          <h2 className="text-xl font-semibold text-gray-900">Assignment Statistics</h2>
-          <button
-            onClick={onClose}
-            className="p-1 text-gray-400 hover:text-gray-600 rounded"
-            type="button"
-          >
+        <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0" style={{ borderColor: '#d6c9a8', background: '#1a3d1c' }}>
+          <h2 className="text-lg font-semibold" style={{ color: '#fdf8f0' }}>Assignment Statistics</h2>
+          <button onClick={onClose} className="p-1 rounded transition-colors" style={{ color: '#a8c5a0' }} onMouseEnter={(e) => (e.currentTarget.style.color = '#fdf8f0')} onMouseLeave={(e) => (e.currentTarget.style.color = '#a8c5a0')} type="button">
             <X size={20} />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
           {isLoading || !assignmentStats ? (
-            <div className="flex items-center justify-center h-32">
-              <Loader2 size={20} className="animate-spin text-blue-600" />
-              <span className="ml-2 text-gray-500">Loading stats...</span>
+            <div className="flex items-center justify-center py-12">
+              <Loader2 size={24} className="animate-spin" style={{ color: '#c9a84c' }} />
+              <span className="ml-2 text-sm" style={{ color: '#6b7280' }}>Loading stats...</span>
             </div>
           ) : (
             <div className="space-y-6">
               {/* Overview Cards */}
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {[
                   { label: 'Total', value: overview?.total_assignments, color: '#3b82f6' },
                   { label: 'Pending', value: overview?.pending, color: '#eab308' },
@@ -363,13 +454,11 @@ const StatsModal: React.FC<StatsModalProps> = ({ isOpen, onClose }) => {
                 ].map(({ label, value, color }) => (
                   <div
                     key={label}
-                    className="rounded-lg p-4 text-center"
-                    style={{ background: '#f9fafb', border: '1px solid #e2e8f0' }}
+                    className="rounded-xl p-4 text-center"
+                    style={{ background: '#fff', border: '1.5px solid #d6c9a8' }}
                   >
-                    <p className="text-2xl font-bold" style={{ color }}>
-                      {value ?? '—'}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">{label}</p>
+                    <p className="text-2xl font-bold" style={{ color }}>{value ?? '—'}</p>
+                    <p className="text-xs mt-1" style={{ color: '#6b7280' }}>{label}</p>
                   </div>
                 ))}
               </div>
@@ -377,38 +466,31 @@ const StatsModal: React.FC<StatsModalProps> = ({ isOpen, onClose }) => {
               {/* By Station */}
               {assignmentStats.byStation.length > 0 && (
                 <section>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
-                    By Station
-                  </p>
-                  <div className="rounded-lg overflow-hidden" style={{ border: '1px solid #e2e8f0' }}>
+                  <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#a8c5a0' }}>By Station</p>
+                  <div className="overflow-x-auto rounded-xl" style={{ border: '1.5px solid #d6c9a8' }}>
                     <table className="w-full text-sm">
                       <thead>
-                        <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e2e8f0' }}>
+                        <tr style={{ background: '#1a3d1c' }}>
                           {['Station', 'Total', 'Pending', 'In Progress', 'Submitted'].map((h) => (
-                            <th
-                              key={h}
-                              className="px-4 py-2 text-left text-xs font-semibold text-gray-500"
-                            >
-                              {h}
-                            </th>
+                            <th key={h} className="px-4 py-2 text-left text-xs font-semibold" style={{ color: '#c9a84c' }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {assignmentStats.byStation.map((s) => (
+                        {assignmentStats.byStation.map((s, idx) => (
                           <tr
                             key={s.id}
-                            className="border-t"
-                            style={{ borderColor: '#f1f5f9' }}
+                            className={idx % 2 === 0 ? 'bg-white' : 'bg-[#fdf8f0]'}
+                            style={{ borderTop: '1px solid #f0e8d6' }}
                           >
-                            <td className="px-4 py-2 font-medium text-gray-800">
+                            <td className="px-4 py-2 font-medium" style={{ color: '#1a3d1c' }}>
                               {s.name}
-                              <span className="ml-1 text-xs text-gray-400">({s.code})</span>
+                              <span className="ml-1 text-xs" style={{ color: '#a8c5a0' }}>({s.code})</span>
                             </td>
-                            <td className="px-4 py-2 text-gray-700">{s.total_assignments}</td>
-                            <td className="px-4 py-2 text-yellow-600">{s.pending}</td>
-                            <td className="px-4 py-2 text-blue-600">{s.in_progress}</td>
-                            <td className="px-4 py-2 text-green-600">{s.submitted}</td>
+                            <td className="px-4 py-2" style={{ color: '#1c1c1c' }}>{s.total_assignments}</td>
+                            <td className="px-4 py-2" style={{ color: '#eab308' }}>{s.pending}</td>
+                            <td className="px-4 py-2" style={{ color: '#6366f1' }}>{s.in_progress}</td>
+                            <td className="px-4 py-2" style={{ color: '#22c55e' }}>{s.submitted}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -473,7 +555,6 @@ const SuperAdminAssign: React.FC = () => {
     dispatch(clearActiveAssignment());
   }, [dispatch]);
 
-  // ── Derived counts ───────────────────────────────────────────────────
   const counts = allAssignments.reduce(
     (acc, a) => {
       acc[a.status] = (acc[a.status] ?? 0) + 1;
@@ -485,26 +566,26 @@ const SuperAdminAssign: React.FC = () => {
   if (isLoading && allAssignments.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 size={24} className="animate-spin text-blue-600" />
-        <span className="ml-2 text-gray-600">Loading assignments...</span>
+        <Loader2 size={24} className="animate-spin" style={{ color: '#c9a84c' }} />
+        <span className="ml-2 text-sm" style={{ color: '#6b7280' }}>Loading assignments...</span>
       </div>
     );
   }
 
   return (
-    <div className="p-6" style={{ background: '#f9fafb', minHeight: '100vh' }}>
+    <div className="w-full p-4 sm:p-6" style={{ background: '#fdf8f0', minHeight: '100vh' }}>
       {/* Header */}
-      <div className="mb-6 flex items-start justify-between">
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Assignments</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            View all inspection assignments across all stations
-          </p>
+          <h1 className="text-2xl sm:text-3xl font-bold" style={{ color: '#1a3d1c' }}>Assignments</h1>
+          <p className="text-sm mt-1" style={{ color: '#6b7280' }}>View all inspection assignments across all stations</p>
         </div>
         <button
           onClick={handleOpenStats}
-          className="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors"
-          style={{ background: '#e0e7ff', color: '#3730a3' }}
+          className="inline-flex items-center justify-center px-4 py-2 rounded-md text-sm font-medium transition-colors w-full sm:w-auto"
+          style={{ background: '#1a3d1c', color: '#fdf8f0' }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = '#2d6a4f')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = '#1a3d1c')}
           type="button"
         >
           <BarChart2 size={16} className="mr-2" />
@@ -514,19 +595,15 @@ const SuperAdminAssign: React.FC = () => {
 
       {/* Error Banner */}
       {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex justify-between items-center">
-          <span className="text-red-700 text-sm">{error}</span>
-          <button
-            onClick={() => dispatch(clearSuperAdminError())}
-            className="text-red-700"
-            type="button"
-          >
-            <X size={16} />
+        <div className="mb-4 p-4 rounded-lg flex justify-between items-center" style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
+          <span className="text-sm" style={{ color: '#b91c1c' }}>{error}</span>
+          <button onClick={() => dispatch(clearSuperAdminError())} type="button">
+            <X size={16} style={{ color: '#b91c1c' }} />
           </button>
         </div>
       )}
 
-      {/* Summary Strip */}
+      {/* Summary Cards */}
       <div className="mb-5 grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: 'Total', value: allAssignments.length, icon: <ClipboardList size={16} />, color: '#3b82f6' },
@@ -536,13 +613,13 @@ const SuperAdminAssign: React.FC = () => {
         ].map(({ label, value, icon, color }) => (
           <div
             key={label}
-            className="rounded-lg p-4 flex items-center gap-3"
-            style={{ background: '#ffffff', border: '1px solid #e2e8f0' }}
+            className="rounded-xl p-4 flex items-center gap-3"
+            style={{ background: '#fff', border: '1.5px solid #d6c9a8' }}
           >
             <span style={{ color }}>{icon}</span>
             <div>
-              <p className="text-xl font-bold text-gray-900">{value}</p>
-              <p className="text-xs text-gray-400">{label}</p>
+              <p className="text-xl font-bold" style={{ color: '#1a3d1c' }}>{value}</p>
+              <p className="text-xs" style={{ color: '#a8c5a0' }}>{label}</p>
             </div>
           </div>
         ))}
@@ -550,16 +627,18 @@ const SuperAdminAssign: React.FC = () => {
 
       {/* Filters */}
       <div
-        className="mb-5 p-4 rounded-lg flex flex-wrap items-end gap-3"
-        style={{ background: '#ffffff', border: '1px solid #e2e8f0' }}
+        className="mb-5 p-4 rounded-xl flex flex-wrap items-end gap-3"
+        style={{ background: '#fff', border: '1.5px solid #d6c9a8' }}
       >
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Station</label>
+          <label className="block text-xs font-medium mb-1" style={{ color: '#1a3d1c' }}>Station</label>
           <select
             value={filters.station_id}
             onChange={(e) => setFilters((prev) => ({ ...prev, station_id: e.target.value }))}
-            className="px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            style={{ borderColor: '#d1d5db', background: '#ffffff', minWidth: '160px' }}
+            className="px-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 transition-colors"
+            style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c', minWidth: '160px' }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = '#c9a84c')}
+            onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
           >
             <option value="">All Stations</option>
             {stations.map((s) => (
@@ -571,12 +650,14 @@ const SuperAdminAssign: React.FC = () => {
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
+          <label className="block text-xs font-medium mb-1" style={{ color: '#1a3d1c' }}>Status</label>
           <select
             value={filters.status}
             onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}
-            className="px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            style={{ borderColor: '#d1d5db', background: '#ffffff', minWidth: '140px' }}
+            className="px-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 transition-colors"
+            style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c', minWidth: '140px' }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = '#c9a84c')}
+            onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
           >
             <option value="">All Statuses</option>
             <option value="pending">Pending</option>
@@ -585,10 +666,13 @@ const SuperAdminAssign: React.FC = () => {
           </select>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 mt-2 sm:mt-0">
           <button
             onClick={handleFilter}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 transition-colors"
+            className="px-4 py-2 rounded-md text-sm transition-colors"
+            style={{ background: '#1a3d1c', color: '#fdf8f0' }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = '#2d6a4f')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = '#1a3d1c')}
             type="button"
           >
             Apply
@@ -597,7 +681,9 @@ const SuperAdminAssign: React.FC = () => {
             <button
               onClick={handleClearFilters}
               className="px-4 py-2 rounded-md text-sm transition-colors"
-              style={{ background: '#f1f5f9', color: '#475569' }}
+              style={{ background: '#f0e8d6', color: '#6b7280' }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = '#e6ddc8')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = '#f0e8d6')}
               type="button"
             >
               Clear
@@ -608,9 +694,9 @@ const SuperAdminAssign: React.FC = () => {
 
       {/* Assignment List */}
       {allAssignments.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
-          <p className="text-gray-500">No assignments found.</p>
-          <p className="text-sm text-gray-400 mt-1">Try adjusting your filters.</p>
+        <div className="text-center py-12 rounded-xl" style={{ background: '#fff', border: '1.5px solid #d6c9a8' }}>
+          <p className="text-sm" style={{ color: '#6b7280' }}>No assignments found.</p>
+          <p className="text-xs mt-1" style={{ color: '#a8c5a0' }}>Try adjusting your filters.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

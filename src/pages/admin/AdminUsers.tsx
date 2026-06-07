@@ -421,7 +421,6 @@ const UserForm = ({
         onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
       >
         <option value="user">User</option>
-        <option value="admin">Admin</option>
       </select>
     </div>
   </div>

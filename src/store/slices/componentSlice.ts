@@ -55,44 +55,36 @@ const getErrorMessage = (error: unknown): string => {
 
 // ─── THUNKS ──────────────────────────────────────────────────────────────
 
-export const fetchComponents = createAsyncThunk<Component[], { section?: string }>(
+export const fetchComponents = createAsyncThunk <
+  Component[],
+  { section?: string; station_id?: number }  // ← add station_id
+>(
   'component/fetchComponents',
   async (params, { rejectWithValue }) => {
     try {
-      const query = params.section ? `?section=${encodeURIComponent(params.section)}` : '';
-      const url = `${ADMIN_BASE}/get${query}`;
+      const query = new URLSearchParams();
+      if (params.section)    query.append('section',    encodeURIComponent(params.section));
+      if (params.station_id) query.append('station_id', params.station_id.toString());
+
+      const url = query.toString()
+        ? `${ADMIN_BASE}/get?${query}`
+        : `${ADMIN_BASE}/get`;
+
       console.log('🔍 Fetching components from:', url);
-      
       const { data } = await axiosClient.get(url);
-      console.log('✅ Components response status:', data.success ? 'success' : 'failed');
-      console.log('📦 Components count:', data.components?.length || 0);
-      
-      // Check if data.components exists and is an array
+
       if (!data.components || !Array.isArray(data.components)) {
         console.warn('⚠️ No components array in response:', data);
         return [];
       }
-      
-      // Validate first component has parsed form_json
-      if (data.components.length > 0) {
-        const firstComp = data.components[0];
-        console.log('🔍 Sample component:', {
-          id: firstComp.id,
-          name: firstComp.name,
-          section: firstComp.section,
-          form_json_type: typeof firstComp.form_json,
-          has_fields: firstComp.form_json?.fields ? true : false
-        });
-      }
-      
+
       return data.components as Component[];
     } catch (error) {
       const err = error as { response?: { status?: number; statusText?: string; data?: { message?: string } }; config?: { url?: string } };
       console.error('❌ Components fetch error:', {
         status: err.response?.status,
-        statusText: err.response?.statusText,
         message: err.response?.data?.message,
-        url: err.config?.url
+        url: err.config?.url,
       });
       return rejectWithValue(getErrorMessage(error));
     }

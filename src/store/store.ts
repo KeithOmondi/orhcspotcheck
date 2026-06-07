@@ -9,6 +9,7 @@ import teamReducer from "./slices/teamSlice"
 import assignmentReducer from "./slices/assignmentSlice"
 import userAssignmentReducer from './slices/userAssignmentSlice';
 import submissionReducer from './slices/submissionSlice';
+import stationReducer from "./slices/stationSlice"
 
 export const store = configureStore({
   reducer: {
@@ -20,6 +21,7 @@ export const store = configureStore({
     assignment: assignmentReducer,
     userAssignment: userAssignmentReducer,
     submission: submissionReducer,
+    station: stationReducer
   },
 });
 

@@ -18,16 +18,20 @@ import {
   clearTeamError,
   type Team,
 } from '../../store/slices/teamSlice';
+import {
+  fetchStations,
+} from '../../store/slices/stationSlice';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, UserPlus, X } from 'lucide-react';
+import { Plus, Trash2, UserPlus, X, Building2, Loader2 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface NewUserForm {
-  email:     string;
-  full_name: string;
-  role:      'user' | 'admin' | 'super_admin';
-  pj_number: string;
+  email:      string;
+  full_name:  string;
+  role:       'user' | 'admin' | 'super_admin';
+  pj_number:  string;
+  station_ids: number[];   // for admin users – one or more stations
 }
 
 interface NewTeamForm {
@@ -35,7 +39,13 @@ interface NewTeamForm {
   station_id: string;
 }
 
-const EMPTY_USER: NewUserForm = { email: '', full_name: '', role: 'user', pj_number: '' };
+const EMPTY_USER: NewUserForm = {
+  email: '',
+  full_name: '',
+  role: 'user',
+  pj_number: '',
+  station_ids: [],
+};
 const EMPTY_TEAM: NewTeamForm = { name: '', station_id: '' };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -47,8 +57,9 @@ const SuperAdminUsers = () => {
     useAppSelector((s) => s.user);
   const { teams, isLoading: teamsLoading, error: teamError, actionSuccess: teamSuccess } =
     useAppSelector((s) => s.team);
+  const { stations, isLoading: stationsLoading } = useAppSelector((s) => s.station);
 
-  const isLoading = usersLoading || teamsLoading;
+  const isLoading = usersLoading || teamsLoading || stationsLoading;
 
   const [newUser, setNewUser]               = useState<NewUserForm>(EMPTY_USER);
   const [newTeam, setNewTeam]               = useState<NewTeamForm>(EMPTY_TEAM);
@@ -62,6 +73,7 @@ const SuperAdminUsers = () => {
     dispatch(resetTeamSuccess());
     dispatch(fetchUsers());
     dispatch(fetchTeams());
+    dispatch(fetchStations());
   }, [dispatch]);
 
   // ── User action success ──────────────────────────────────────────────────────
@@ -101,7 +113,29 @@ const SuperAdminUsers = () => {
       toast.error('Please fill in all required fields.');
       return;
     }
-    await dispatch(createUser(newUser));
+    if (newUser.role === 'admin' && newUser.station_ids.length === 0) {
+      toast.error('Please select at least one station for this admin.');
+      return;
+    }
+
+    const payload: {
+      email: string;
+      full_name: string;
+      role: 'user' | 'admin' | 'super_admin';
+      pj_number: string;
+      station_ids?: number[];
+    } = {
+      email: newUser.email,
+      full_name: newUser.full_name,
+      role: newUser.role,
+      pj_number: newUser.pj_number,
+    };
+
+    if (newUser.role === 'admin') {
+      payload.station_ids = newUser.station_ids;
+    }
+
+    await dispatch(createUser(payload));
     setNewUser(EMPTY_USER);
   };
 
@@ -150,8 +184,8 @@ const SuperAdminUsers = () => {
   const getRoleBadge = (role: string) => {
     switch (role) {
       case 'super_admin': return 'bg-red-100 text-red-700';
-      case 'admin':       return 'bg-yellow-100 text-yellow-700';
-      default:            return 'bg-gray-100 text-gray-600';
+      case 'admin':       return 'bg-[#c9a84c]/20 text-[#c9a84c]';
+      default:            return 'bg-[#a8c5a0]/20 text-[#2d6a4f]';
     }
   };
 
@@ -160,61 +194,128 @@ const SuperAdminUsers = () => {
   if (isLoading && !users.length && !teams.length) {
     return (
       <div className="flex justify-center items-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2" style={{ borderColor: '#c9a84c' }} />
       </div>
     );
   }
 
   return (
-    <div className="w-full p-6 max-w-7xl mx-auto">
-      <h1 className="text-3xl font-bold text-gray-900 mb-8">User & Team Management</h1>
+    <div className="w-full p-4 sm:p-6" style={{ background: '#fdf8f0' }}>
+      <h1 className="text-2xl sm:text-3xl font-bold mb-6" style={{ color: '#1a3d1c' }}>User & Team Management</h1>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         {/* ── LEFT: Users ── */}
         <div className="space-y-6">
 
           {/* Create User */}
-          <div className="border border-gray-200 rounded-lg p-5">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <Plus size={18} className="text-blue-500" />
-              Create New User
-            </h2>
-            <form onSubmit={handleCreateUser} className="space-y-3">
+          <div className="rounded-xl overflow-hidden" style={{ background: '#fff', border: '1.5px solid #d6c9a8' }}>
+            <div className="px-5 py-4 border-b" style={{ background: '#1a3d1c', borderColor: '#2c5f2e' }}>
+              <h2 className="text-sm font-semibold flex items-center gap-2" style={{ color: '#fdf8f0' }}>
+                <Plus size={18} style={{ color: '#c9a84c' }} />
+                Create New User
+              </h2>
+            </div>
+            <form onSubmit={handleCreateUser} className="p-5 space-y-4">
               <input
                 type="text"
                 placeholder="Full Name *"
                 value={newUser.full_name}
                 onChange={(e) => setNewUser(p => ({ ...p, full_name: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 transition-colors"
+                style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c' }}
+                onFocus={(e) => (e.currentTarget.style.borderColor = '#c9a84c')}
+                onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
               />
               <input
                 type="email"
                 placeholder="Email *"
                 value={newUser.email}
                 onChange={(e) => setNewUser(p => ({ ...p, email: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 transition-colors"
+                style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c' }}
+                onFocus={(e) => (e.currentTarget.style.borderColor = '#c9a84c')}
+                onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
               />
               <input
                 type="text"
                 placeholder="PJ Number *"
                 value={newUser.pj_number}
                 onChange={(e) => setNewUser(p => ({ ...p, pj_number: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 transition-colors"
+                style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c' }}
+                onFocus={(e) => (e.currentTarget.style.borderColor = '#c9a84c')}
+                onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
               />
               <select
                 value={newUser.role}
-                onChange={(e) => setNewUser(p => ({ ...p, role: e.target.value as NewUserForm['role'] }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onChange={(e) => {
+                  const role = e.target.value as NewUserForm['role'];
+                  setNewUser(p => ({ ...p, role, station_ids: role === 'admin' ? p.station_ids : [] }));
+                }}
+                className="w-full px-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 transition-colors"
+                style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c' }}
+                onFocus={(e) => (e.currentTarget.style.borderColor = '#c9a84c')}
+                onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
               >
                 <option value="user">User</option>
                 <option value="admin">Admin</option>
                 <option value="super_admin">Super Admin</option>
               </select>
+
+              {/* Station selection – only for admins */}
+              {newUser.role === 'admin' && (
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: '#1a3d1c' }}>
+                    Assign to Station(s) *
+                  </label>
+                  <div className="relative">
+                    <Building2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: '#a8c5a0' }} />
+                    {stationsLoading ? (
+                      <div className="w-full pl-9 pr-3 py-2 rounded-md text-sm border border-[#d6c9a8] bg-white flex items-center gap-2">
+                        <Loader2 size={14} className="animate-spin" style={{ color: '#c9a84c' }} />
+                        <span style={{ color: '#6b7280' }}>Loading stations...</span>
+                      </div>
+                    ) : stations.length === 0 ? (
+                      <div className="w-full pl-9 pr-3 py-2 rounded-md text-sm border border-[#d6c9a8] bg-white text-red-500">
+                        No stations found. Please create stations first.
+                      </div>
+                    ) : (
+                      <select
+                        multiple
+                        value={newUser.station_ids.map(String)}
+                        onChange={(e) => {
+                          const selected = Array.from(e.target.selectedOptions, (opt) => Number(opt.value));
+                          setNewUser(p => ({ ...p, station_ids: selected }));
+                        }}
+                        className="w-full pl-9 pr-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 transition-colors min-h-[100px]"
+                        style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c' }}
+                        onFocus={(e) => (e.currentTarget.style.borderColor = '#c9a84c')}
+                        onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
+                      >
+                        {stations.map((station) => (
+                          <option key={station.id} value={station.id}>
+                            {station.name} ({station.code})
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                  {stations.length > 0 && (
+                    <p className="text-[10px] mt-1" style={{ color: '#a8c5a0' }}>
+                      Hold Ctrl (Cmd on Mac) to select multiple stations.
+                    </p>
+                  )}
+                </div>
+              )}
+
               <button
                 type="submit"
                 disabled={usersLoading}
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full px-4 py-2 rounded-md text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: '#1a3d1c', color: '#fdf8f0' }}
+                onMouseEnter={(e) => { if (!usersLoading) e.currentTarget.style.background = '#2d6a4f'; }}
+                onMouseLeave={(e) => { if (!usersLoading) e.currentTarget.style.background = '#1a3d1c'; }}
               >
                 Create User
               </button>
@@ -222,34 +323,40 @@ const SuperAdminUsers = () => {
           </div>
 
           {/* Users List */}
-          <div className="border border-gray-200 rounded-lg p-5">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              All Users <span className="text-gray-400 font-normal">({users.length})</span>
-            </h2>
-            <div className="space-y-2 max-h-96 overflow-y-auto">
+          <div className="rounded-xl overflow-hidden" style={{ background: '#fff', border: '1.5px solid #d6c9a8' }}>
+            <div className="px-5 py-4 border-b" style={{ background: '#1a3d1c', borderColor: '#2c5f2e' }}>
+              <h2 className="text-sm font-semibold" style={{ color: '#fdf8f0' }}>
+                All Users <span style={{ color: '#a8c5a0' }}>({users.length})</span>
+              </h2>
+            </div>
+            <div className="max-h-96 overflow-y-auto p-4 space-y-3">
               {users.length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-6">No users yet.</p>
+                <p className="text-sm text-center py-6" style={{ color: '#a8c5a0' }}>No users yet.</p>
               ) : (
                 users.map((user) => (
                   <div
                     key={user.id}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-md"
+                    className="flex items-center justify-between p-3 rounded-lg"
+                    style={{ background: '#fdf8f0', border: '1px solid #f0e8d6' }}
                   >
-                    <div className="min-w-0">
-                      <p className="font-medium text-gray-900 text-sm truncate">{user.full_name}</p>
-                      <p className="text-xs text-gray-500 truncate">{user.email}</p>
-                      <div className="flex items-center gap-2 mt-1">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-sm truncate" style={{ color: '#1a3d1c' }}>{user.full_name}</p>
+                      <p className="text-xs truncate" style={{ color: '#6b7280' }}>{user.email}</p>
+                      <div className="flex flex-wrap items-center gap-2 mt-1">
                         <span className={`px-2 py-0.5 rounded text-xs font-medium ${getRoleBadge(user.role)}`}>
                           {user.role}
                         </span>
                         {user.pj_number && (
-                          <span className="text-xs text-gray-400">PJ: {user.pj_number}</span>
+                          <span className="text-xs" style={{ color: '#a8c5a0' }}>PJ: {user.pj_number}</span>
                         )}
                       </div>
                     </div>
                     <button
                       onClick={() => handleDeleteUser(user)}
-                      className="ml-3 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors shrink-0"
+                      className="ml-3 p-1.5 rounded transition-colors shrink-0"
+                      style={{ color: '#c0392b' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = '#922b21')}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = '#c0392b')}
                       title="Delete user"
                     >
                       <Trash2 size={15} />
@@ -265,30 +372,41 @@ const SuperAdminUsers = () => {
         <div className="space-y-6">
 
           {/* Create Team */}
-          <div className="border border-gray-200 rounded-lg p-5">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <Plus size={18} className="text-blue-500" />
-              Create New Team
-            </h2>
-            <form onSubmit={handleCreateTeam} className="space-y-3">
+          <div className="rounded-xl overflow-hidden" style={{ background: '#fff', border: '1.5px solid #d6c9a8' }}>
+            <div className="px-5 py-4 border-b" style={{ background: '#1a3d1c', borderColor: '#2c5f2e' }}>
+              <h2 className="text-sm font-semibold flex items-center gap-2" style={{ color: '#fdf8f0' }}>
+                <Plus size={18} style={{ color: '#c9a84c' }} />
+                Create New Team
+              </h2>
+            </div>
+            <form onSubmit={handleCreateTeam} className="p-5 space-y-4">
               <input
                 type="text"
                 placeholder="Team Name *"
                 value={newTeam.name}
                 onChange={(e) => setNewTeam(p => ({ ...p, name: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 transition-colors"
+                style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c' }}
+                onFocus={(e) => (e.currentTarget.style.borderColor = '#c9a84c')}
+                onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
               />
               <input
                 type="number"
                 placeholder="Station ID (optional)"
                 value={newTeam.station_id}
                 onChange={(e) => setNewTeam(p => ({ ...p, station_id: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 transition-colors"
+                style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c' }}
+                onFocus={(e) => (e.currentTarget.style.borderColor = '#c9a84c')}
+                onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
               />
               <button
                 type="submit"
                 disabled={teamsLoading}
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full px-4 py-2 rounded-md text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: '#1a3d1c', color: '#fdf8f0' }}
+                onMouseEnter={(e) => { if (!teamsLoading) e.currentTarget.style.background = '#2d6a4f'; }}
+                onMouseLeave={(e) => { if (!teamsLoading) e.currentTarget.style.background = '#1a3d1c'; }}
               >
                 Create Team
               </button>
@@ -296,16 +414,21 @@ const SuperAdminUsers = () => {
           </div>
 
           {/* Add Member to Team */}
-          <div className="border border-gray-200 rounded-lg p-5">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <UserPlus size={18} className="text-blue-500" />
-              Add Member to Team
-            </h2>
-            <div className="space-y-3">
+          <div className="rounded-xl overflow-hidden" style={{ background: '#fff', border: '1.5px solid #d6c9a8' }}>
+            <div className="px-5 py-4 border-b" style={{ background: '#1a3d1c', borderColor: '#2c5f2e' }}>
+              <h2 className="text-sm font-semibold flex items-center gap-2" style={{ color: '#fdf8f0' }}>
+                <UserPlus size={18} style={{ color: '#c9a84c' }} />
+                Add Member to Team
+              </h2>
+            </div>
+            <div className="p-5 space-y-4">
               <select
                 value={selectedTeamId}
                 onChange={(e) => setSelectedTeamId(Number(e.target.value))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 transition-colors"
+                style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c' }}
+                onFocus={(e) => (e.currentTarget.style.borderColor = '#c9a84c')}
+                onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
               >
                 <option value="">-- Select a team --</option>
                 {teams.map((t) => (
@@ -315,7 +438,10 @@ const SuperAdminUsers = () => {
               <select
                 value={selectedUserId}
                 onChange={(e) => setSelectedUserId(Number(e.target.value))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 transition-colors"
+                style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c' }}
+                onFocus={(e) => (e.currentTarget.style.borderColor = '#c9a84c')}
+                onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
               >
                 <option value="">-- Select a user --</option>
                 {users.map((u) => (
@@ -324,19 +450,23 @@ const SuperAdminUsers = () => {
                   </option>
                 ))}
               </select>
-              <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700">
+              <label className="flex items-center gap-2 cursor-pointer text-sm" style={{ color: '#1a3d1c' }}>
                 <input
                   type="checkbox"
                   checked={isTeamLead}
                   onChange={(e) => setIsTeamLead(e.target.checked)}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  className="rounded focus:ring-2"
+                  style={{ borderColor: '#d6c9a8', accentColor: '#c9a84c' }}
                 />
                 Set as Team Lead
               </label>
               <button
                 onClick={handleAddMember}
                 disabled={selectedTeamId === '' || selectedUserId === ''}
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full px-4 py-2 rounded-md text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: '#1a3d1c', color: '#fdf8f0' }}
+                onMouseEnter={(e) => { if (selectedTeamId !== '' && selectedUserId !== '') e.currentTarget.style.background = '#2d6a4f'; }}
+                onMouseLeave={(e) => { if (selectedTeamId !== '' && selectedUserId !== '') e.currentTarget.style.background = '#1a3d1c'; }}
               >
                 Add to Team
               </button>
@@ -344,19 +474,25 @@ const SuperAdminUsers = () => {
           </div>
 
           {/* Teams List */}
-          <div className="border border-gray-200 rounded-lg p-5">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              All Teams <span className="text-gray-400 font-normal">({teams.length})</span>
-            </h2>
-            <div className="space-y-3 max-h-96 overflow-y-auto">
+          <div className="rounded-xl overflow-hidden" style={{ background: '#fff', border: '1.5px solid #d6c9a8' }}>
+            <div className="px-5 py-4 border-b" style={{ background: '#1a3d1c', borderColor: '#2c5f2e' }}>
+              <h2 className="text-sm font-semibold" style={{ color: '#fdf8f0' }}>
+                All Teams <span style={{ color: '#a8c5a0' }}>({teams.length})</span>
+              </h2>
+            </div>
+            <div className="max-h-96 overflow-y-auto p-4 space-y-3">
               {teams.length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-6">No teams yet.</p>
+                <p className="text-sm text-center py-6" style={{ color: '#a8c5a0' }}>No teams yet.</p>
               ) : (
                 teams.map((team) => (
-                  <div key={team.id} className="border border-gray-100 rounded-lg p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="font-medium text-gray-900 text-sm">{team.name}</p>
-                      <span className="text-xs text-gray-400">
+                  <div
+                    key={team.id}
+                    className="rounded-lg p-3"
+                    style={{ background: '#fdf8f0', border: '1px solid #f0e8d6' }}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-2 gap-1">
+                      <p className="font-medium text-sm" style={{ color: '#1a3d1c' }}>{team.name}</p>
+                      <span className="text-xs" style={{ color: '#a8c5a0' }}>
                         Lead: {getTeamLead(team)}
                       </span>
                     </div>
@@ -365,19 +501,23 @@ const SuperAdminUsers = () => {
                         {team.members.map((member) => (
                           <div
                             key={member.user_id}
-                            className="flex items-center justify-between p-1.5 bg-gray-50 rounded text-xs"
+                            className="flex items-center justify-between p-2 rounded text-xs"
+                            style={{ background: '#fff', border: '1px solid #d6c9a8' }}
                           >
-                            <span className="text-gray-700">
+                            <span style={{ color: '#1c1c1c' }}>
                               {member.full_name}
                               {member.is_team_lead && (
-                                <span className="ml-1.5 px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[10px]">
+                                <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px]" style={{ background: '#c9a84c/20', color: '#c9a84c' }}>
                                   Lead
                                 </span>
                               )}
                             </span>
                             <button
                               onClick={() => handleRemoveMember(team.id, member.user_id)}
-                              className="p-0.5 text-gray-400 hover:text-red-600 transition-colors"
+                              className="p-0.5 rounded transition-colors"
+                              style={{ color: '#c0392b' }}
+                              onMouseEnter={(e) => (e.currentTarget.style.color = '#922b21')}
+                              onMouseLeave={(e) => (e.currentTarget.style.color = '#c0392b')}
                               title="Remove member"
                             >
                               <X size={13} />
@@ -386,7 +526,7 @@ const SuperAdminUsers = () => {
                         ))}
                       </div>
                     ) : (
-                      <p className="text-xs text-gray-400">No members assigned.</p>
+                      <p className="text-xs text-center py-2" style={{ color: '#a8c5a0' }}>No members assigned.</p>
                     )}
                   </div>
                 ))
