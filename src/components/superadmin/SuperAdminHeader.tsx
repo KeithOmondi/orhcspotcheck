@@ -1,14 +1,17 @@
-// src/components/layout/AdminHeader.tsx
+// src/components/superadmin/SuperAdminHeader.tsx
 import React, { useState, useRef, useEffect } from 'react';
-import { useAppSelector } from '../../store/hooks';
+import { useDispatch, useSelector } from 'react-redux';
 import { Menu, ChevronDown, LogOut, Settings, Shield } from 'lucide-react';
+import { logoutUser } from '../../store/slices/authSlice';
+import type { AppDispatch, RootState } from '../../store/store';
 
 interface AdminHeaderProps {
   onMenuToggle: () => void;
 }
 
 export const SuperAdminHeader: React.FC<AdminHeaderProps> = ({ onMenuToggle }) => {
-  const { user } = useAppSelector((state) => state.auth);
+  const dispatch = useDispatch<AppDispatch>();
+  const { user } = useSelector((state: RootState) => state.auth);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -21,6 +24,27 @@ export const SuperAdminHeader: React.FC<AdminHeaderProps> = ({ onMenuToggle }) =
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const handleLogout = () => {
+    dispatch(logoutUser());
+    setDropdownOpen(false);
+  };
+
+  // Get user's display name - check both possible property names
+  const getDisplayName = () => {
+    if (user?.full_name) return user.full_name;
+    if (user?.full_name) return user.full_name;
+    return 'Admin Officer';
+  };
+
+  // Get user's initials for avatar
+  const getInitials = () => {
+    const name = getDisplayName();
+    if (name && name !== 'Admin Officer') {
+      return name.charAt(0).toUpperCase();
+    }
+    return 'A';
+  };
 
   return (
     <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-stone-200 bg-white px-4 shadow-sm sm:px-6">
@@ -42,7 +66,7 @@ export const SuperAdminHeader: React.FC<AdminHeaderProps> = ({ onMenuToggle }) =
             <Shield className="h-3 w-3" />
           </div>
           <span className="text-sm font-bold text-stone-900 uppercase tracking-wider truncate">
-            Automated Portal
+            SpotCheck Portal
           </span>
         </div>
       </div>
@@ -57,10 +81,10 @@ export const SuperAdminHeader: React.FC<AdminHeaderProps> = ({ onMenuToggle }) =
           >
             {/* Branded Profile Initial */}
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#1E4620] text-xs font-bold text-[#C29B38] ring-2 ring-stone-100">
-              {user?.name ? user.name.charAt(0).toUpperCase() : 'A'}
+              {getInitials()}
             </div>
             <span className="hidden text-xs font-bold uppercase tracking-wider text-stone-700 md:block">
-              {user?.name || 'Admin Officer'}
+              {getDisplayName()}
             </span>
             <ChevronDown className={`hidden h-4 w-4 text-stone-400 transition-transform duration-150 md:block ${dropdownOpen ? 'rotate-180' : ''}`} />
           </button>
@@ -82,8 +106,8 @@ export const SuperAdminHeader: React.FC<AdminHeaderProps> = ({ onMenuToggle }) =
               </button>
               <button
                 type="button"
+                onClick={handleLogout}
                 className="flex w-full items-center gap-2 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                onClick={() => setDropdownOpen(false)}
               >
                 <LogOut className="h-3.5 w-3.5 text-red-400" />
                 Sign Out
