@@ -14,7 +14,7 @@ export interface TeamMember {
 export interface Team {
   id:         number;
   name:       string;
-  station_id: number | null;
+  // station_id removed – teams are no longer bound to a specific court
   created_at: string;
   updated_at: string;
   members?:   TeamMember[];
@@ -34,8 +34,6 @@ const initialState: TeamState = {
   actionSuccess: false,
 };
 
-
-
 const getErrorMessage = (error: unknown): string => {
   if (error && typeof error === 'object' && 'response' in error) {
     const { response } = error as { response?: { data?: { message?: string } } };
@@ -51,7 +49,7 @@ export const fetchTeams = createAsyncThunk<Team[], void>(
   'team/fetchTeams',
   async (_, { rejectWithValue }) => {
     try {
-      const { data } = await axiosClient.get("/spotcheck-admin/teams/get");  // ✅ Correct
+      const { data } = await axiosClient.get("/spotcheck-admin/teams/get");
       return data.teams as Team[];
     } catch (error) {
       return rejectWithValue(getErrorMessage(error));
@@ -59,11 +57,12 @@ export const fetchTeams = createAsyncThunk<Team[], void>(
   }
 );
 
-export const createTeam = createAsyncThunk<Team, { name?: string; station_id?: number | null }>(
+// Updated: only name is required for team creation
+export const createTeam = createAsyncThunk<Team, { name: string }>(
   'team/createTeam',
   async (teamData, { rejectWithValue }) => {
     try {
-      const { data } = await axiosClient.post("/spotcheck-admin/teams/create", teamData);  // ✅ Correct
+      const { data } = await axiosClient.post("/spotcheck-admin/teams/create", teamData);
       return data.team as Team;
     } catch (error) {
       return rejectWithValue(getErrorMessage(error));
@@ -78,7 +77,7 @@ export const addTeamMember = createAsyncThunk<
   'team/addTeamMember',
   async (payload, { rejectWithValue }) => {
     try {
-      await axiosClient.post("/spotcheck-admin/teams/members/add", payload);  // ✅ Fixed
+      await axiosClient.post("/spotcheck-admin/teams/members/add", payload);
       return payload;
     } catch (error) {
       return rejectWithValue(getErrorMessage(error));
@@ -93,7 +92,7 @@ export const removeTeamMember = createAsyncThunk<
   'team/removeTeamMember',
   async ({ team_id, user_id }, { rejectWithValue }) => {
     try {
-      await axiosClient.delete(`/spotcheck-admin/teams/remove/${team_id}/members/${user_id}`);  // ✅ Fixed
+      await axiosClient.delete(`/spotcheck-admin/teams/remove/${team_id}/members/${user_id}`);
       return { team_id, user_id };
     } catch (error) {
       return rejectWithValue(getErrorMessage(error));
@@ -116,8 +115,7 @@ const teamSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-
-      // ── Fetch Teams ──────────────────────────────────────────────────────────
+      // Fetch Teams
       .addCase(fetchTeams.pending, (state) => {
         state.isLoading = true;
         state.error     = null;
@@ -131,7 +129,7 @@ const teamSlice = createSlice({
         state.error     = action.payload as string;
       })
 
-      // ── Create Team ──────────────────────────────────────────────────────────
+      // Create Team
       .addCase(createTeam.pending, (state) => {
         state.isLoading     = true;
         state.error         = null;
@@ -147,7 +145,7 @@ const teamSlice = createSlice({
         state.error     = action.payload as string;
       })
 
-      // ── Add Team Member ──────────────────────────────────────────────────────
+      // Add Team Member
       .addCase(addTeamMember.pending, (state) => {
         state.isLoading     = true;
         state.error         = null;
@@ -156,7 +154,6 @@ const teamSlice = createSlice({
       .addCase(addTeamMember.fulfilled, (state, action) => {
         state.isLoading     = false;
         state.actionSuccess = true;
-        // Optimistic update — full name/email filled in on next fetchTeams
         const { team_id, user_id, is_team_lead } = action.payload;
         const team = state.teams.find(t => t.id === team_id);
         if (team) {
@@ -175,7 +172,7 @@ const teamSlice = createSlice({
         state.error     = action.payload as string;
       })
 
-      // ── Remove Team Member ───────────────────────────────────────────────────
+      // Remove Team Member
       .addCase(removeTeamMember.pending, (state) => {
         state.isLoading     = true;
         state.error         = null;

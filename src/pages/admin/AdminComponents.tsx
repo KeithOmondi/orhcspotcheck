@@ -519,6 +519,7 @@ const AdminComponents: React.FC = () => {
   );
   const { users } = useSelector((state: RootState) => state.user);
   const { stations, isLoading: stationsLoading } = useSelector((state: RootState) => state.station);
+  const { user: currentUser } = useSelector((state: RootState) => state.auth); // <-- get current user (admin or super_admin)
 
   const [activeStationId, setActiveStationId] = useState<number | ''>('');
   const [activeView, setActiveView] = useState<ViewTab>('admin');
@@ -531,22 +532,18 @@ const AdminComponents: React.FC = () => {
   const actionSuccess = componentSuccess || assignmentSuccess;
 
   // ── Load once on mount ──────────────────────────────────────────────────────
-  // Components = global (same 12 sections for all courts), fetch once
-  // Users = global, filtered client-side by station_id
-  // Stations = global list for the selector
   useEffect(() => {
     dispatch(fetchComponents({}));
     dispatch(fetchUsers());
     dispatch(fetchStations());
   }, [dispatch]);
 
-// Put the resets in the handler where the station changes
-const handleStationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-  const val = e.target.value;
-  setActiveStationId(val === '' ? '' : Number(val));
-  setActiveIndex(0);
-  setActiveView('admin');
-};
+  const handleStationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    setActiveStationId(val === '' ? '' : Number(val));
+    setActiveIndex(0);
+    setActiveView('admin');
+  };
 
   // ── Derived ─────────────────────────────────────────────────────────────────
 
@@ -555,13 +552,21 @@ const handleStationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     [stations, activeStationId],
   );
 
-  // Only show users belonging to the selected station
-  const stationUsers = useMemo(
-    () => activeStationId === ''
-      ? []
-      : users.filter((u) => u.station_id === activeStationId),
-    [users, activeStationId],
-  );
+  // NEW: For admin role, show all users from all assigned stations (mobile team).
+  // For super_admin, show all users. For no station selected, return empty array.
+  const stationUsers = useMemo(() => {
+    if (activeStationId === '') return [];
+
+    if (currentUser?.role === 'admin') {
+      const adminStationIds = currentUser.station_ids ?? [];
+      if (adminStationIds.length === 0) return [];
+      // Return users whose station_id is in the admin's list (regardless of selected court)
+      return users.filter((u) => u.station_id !== null && adminStationIds.includes(u.station_id));
+    }
+
+    // Super_admin: show all users (or you can filter by the selected station if desired)
+    return users;
+  }, [users, activeStationId, currentUser]);
 
   const currentComponent = components[activeIndex] ?? null;
   const assignmentForCurrent = useMemo(
@@ -614,7 +619,6 @@ const handleStationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
   return (
     <div className="flex h-full overflow-hidden" style={{ background: '#fdf8f0' }}>
 
-      {/* Sidebar — always shows all 12 components; assignment names update per station */}
       <Sidebar
         components={components}
         assignments={assignments}
@@ -629,14 +633,13 @@ const handleStationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
           className="flex items-center gap-2 px-5 py-3 flex-shrink-0 flex-wrap"
           style={{ borderBottom: '1px solid #d6c9a8', background: '#fff' }}
         >
-          {/* Court selector */}
           <div className="flex items-center gap-2">
             <Building2 size={14} style={{ color: '#6b7280' }} />
             <select
               className="px-3 py-1.5 rounded-lg text-[13px] font-medium outline-none"
               style={{ background: '#f0e8d6', border: '1.5px solid #d6c9a8', color: '#1a3d1c', fontFamily: 'inherit' }}
               value={activeStationId}
-  onChange={handleStationChange}
+              onChange={handleStationChange}
             >
               <option value="">— Select a Court —</option>
               {stations.map((s) => (
@@ -645,7 +648,6 @@ const handleStationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
             </select>
           </div>
 
-          {/* View tabs — disabled until a station is chosen */}
           {TABS.map((t) => (
             <button
               key={t.key}

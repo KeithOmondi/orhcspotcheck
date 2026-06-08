@@ -6,32 +6,33 @@ import axiosClient from '../../api/api';
 export type UserRole = 'super_admin' | 'admin' | 'user';
 
 export interface UserMetadata {
-  id: string;
-  email: string;
-  role: UserRole;
-  full_name: string;
-  pj_number: string;
-  station_id: number | null;
+  id          : string;
+  email       : string;
+  role        : UserRole;
+  full_name   : string;
+  pj_number   : string;
+  station_id  : number | null;   // 'user' role — single station
+  station_ids : number[];        // 'admin' role — up to 5 stations
 }
 
 interface AuthState {
-  user: UserMetadata | null;
-  accessToken: string | null;
-  isLoading: boolean;
-  error: string | null;
-  otpRequested: boolean;
-  isInitializing: boolean;
-  createUserSuccess: boolean;
+  user              : UserMetadata | null;
+  accessToken       : string | null;
+  isLoading         : boolean;
+  error             : string | null;
+  otpRequested      : boolean;
+  isInitializing    : boolean;
+  createUserSuccess : boolean;
 }
 
 const initialState: AuthState = {
-  user: null,
-  accessToken: null,
-  isLoading: false,
-  error: null,
-  otpRequested: false,
-  isInitializing: true,
-  createUserSuccess: false,
+  user              : null,
+  accessToken       : null,
+  isLoading         : false,
+  error             : null,
+  otpRequested      : false,
+  isInitializing    : true,
+  createUserSuccess : false,
 };
 
 const getErrorMessage = (error: unknown): string => {
@@ -93,11 +94,12 @@ export const logoutUser = createAsyncThunk(
 );
 
 export interface CreateUserPayload {
-  full_name: string;
-  email: string;
-  pj_number: string;
-  role?: UserRole;
-  station_id?: number | null;
+  full_name   : string;
+  email       : string;
+  pj_number   : string;
+  role?       : UserRole;
+  station_id? : number | null;   // for 'user' role
+  station_ids?: number[];        // for 'admin' role
 }
 
 export const createUser = createAsyncThunk(
@@ -122,10 +124,10 @@ const authSlice = createSlice({
       state.accessToken = action.payload;
     },
     clearAuth: (state) => {
-      state.user        = null;
-      state.accessToken = null;
+      state.user         = null;
+      state.accessToken  = null;
       state.otpRequested = false;
-      state.error       = null;
+      state.error        = null;
     },
     clearError: (state) => {
       state.error = null;
@@ -136,7 +138,7 @@ const authSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // ── Request OTP ──────────────────────────────────────────────────────────
+      // ── Request OTP ────────────────────────────────────────────────────────
       .addCase(requestOtp.pending, (state) => {
         state.isLoading = true;
         state.error     = null;
@@ -150,15 +152,19 @@ const authSlice = createSlice({
         state.error     = action.payload as string;
       })
 
-      // ── Verify OTP ───────────────────────────────────────────────────────────
+      // ── Verify OTP ─────────────────────────────────────────────────────────
       .addCase(verifyOtp.pending, (state) => {
         state.isLoading = true;
         state.error     = null;
       })
       .addCase(verifyOtp.fulfilled, (state, action: PayloadAction<{ accessToken: string; user: UserMetadata }>) => {
-        state.isLoading   = false;
-        state.accessToken = action.payload.accessToken;
-        state.user        = action.payload.user;
+        state.isLoading    = false;
+        state.accessToken  = action.payload.accessToken;
+        // Normalise: backend always sends station_ids; guard for older tokens
+        state.user         = {
+          ...action.payload.user,
+          station_ids: action.payload.user.station_ids ?? [],
+        };
         state.otpRequested = false;
       })
       .addCase(verifyOtp.rejected, (state, action) => {
@@ -166,19 +172,22 @@ const authSlice = createSlice({
         state.error     = action.payload as string;
       })
 
-      // ── Refresh Token ────────────────────────────────────────────────────────
+      // ── Refresh Token ──────────────────────────────────────────────────────
       .addCase(refreshAccessToken.fulfilled, (state, action) => {
-        state.accessToken   = action.payload.accessToken;
-        state.user          = action.payload.user;
+        state.accessToken    = action.payload.accessToken;
+        state.user           = {
+          ...action.payload.user,
+          station_ids: action.payload.user.station_ids ?? [],
+        };
         state.isInitializing = false;
       })
       .addCase(refreshAccessToken.rejected, (state) => {
-        state.user          = null;
-        state.accessToken   = null;
+        state.user           = null;
+        state.accessToken    = null;
         state.isInitializing = false;
       })
 
-      // ── Logout ───────────────────────────────────────────────────────────────
+      // ── Logout ─────────────────────────────────────────────────────────────
       .addCase(logoutUser.pending, (state) => {
         state.isLoading = true;
       })
@@ -195,7 +204,7 @@ const authSlice = createSlice({
         state.isLoading    = false;
       })
 
-      // ── Create User ──────────────────────────────────────────────────────────
+      // ── Create User ────────────────────────────────────────────────────────
       .addCase(createUser.pending, (state) => {
         state.isLoading         = true;
         state.error             = null;

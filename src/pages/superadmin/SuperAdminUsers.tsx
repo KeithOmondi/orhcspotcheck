@@ -18,35 +18,117 @@ import {
   clearTeamError,
   type Team,
 } from '../../store/slices/teamSlice';
-import {
-  fetchStations,
-} from '../../store/slices/stationSlice';
+import { fetchStations } from '../../store/slices/stationSlice';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, UserPlus, X, Building2, Loader2 } from 'lucide-react';
+import { Plus, Trash2, UserPlus, X, Building2, Loader2, CheckSquare } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface NewUserForm {
-  email:      string;
-  full_name:  string;
-  role:       'user' | 'admin' | 'super_admin';
-  pj_number:  string;
-  station_ids: number[];   // for admin users – one or more stations
+  email       : string;
+  full_name   : string;
+  role        : 'user' | 'admin' | 'super_admin';
+  pj_number   : string;
+  station_ids : number[];
 }
 
 interface NewTeamForm {
-  name:       string;
-  station_id: string;
+  name : string;
+  // station_id removed – teams are no longer bound to a court
 }
 
 const EMPTY_USER: NewUserForm = {
-  email: '',
-  full_name: '',
-  role: 'user',
-  pj_number: '',
-  station_ids: [],
+  email: '', full_name: '', role: 'user', pj_number: '', station_ids: [],
 };
-const EMPTY_TEAM: NewTeamForm = { name: '', station_id: '' };
+const EMPTY_TEAM: NewTeamForm = { name: '' };
+
+// ─── Shared input style helpers ───────────────────────────────────────────────
+const inputCls = 'w-full px-3 py-2 rounded-md text-sm focus:outline-none transition-colors';
+const inputStyle = { border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c' };
+const onFocus  = (e: React.FocusEvent<HTMLElement>)  => (e.currentTarget.style.borderColor = '#c9a84c');
+const onBlur   = (e: React.FocusEvent<HTMLElement>)  => (e.currentTarget.style.borderColor = '#d6c9a8');
+
+// ─── Station Checkbox Picker (unchanged – for admin user creation) ────────────
+const StationPicker: React.FC<{
+  stations  : { id: number; name: string; code: string | null }[];
+  selected  : number[];
+  onChange  : (ids: number[]) => void;
+  loading   : boolean;
+  max?      : number;
+}> = ({ stations, selected, onChange, loading, max = 5 }) => {
+
+  const toggle = (id: number) => {
+    if (selected.includes(id)) {
+      onChange(selected.filter(s => s !== id));
+    } else {
+      if (selected.length >= max) {
+        toast.error(`An admin can be assigned to a maximum of ${max} stations.`);
+        return;
+      }
+      onChange([...selected, id]);
+    }
+  };
+
+  if (loading) return (
+    <div className="flex items-center gap-2 py-2 text-sm" style={{ color: '#6b7280' }}>
+      <Loader2 size={14} className="animate-spin" style={{ color: '#c9a84c' }} />
+      Loading stations…
+    </div>
+  );
+
+  if (stations.length === 0) return (
+    <p className="text-sm py-2" style={{ color: '#c0392b' }}>
+      No stations found. Create stations first.
+    </p>
+  );
+
+  return (
+    <div
+      className="rounded-md overflow-hidden"
+      style={{ border: '1.5px solid #d6c9a8', maxHeight: '180px', overflowY: 'auto' }}
+    >
+      {stations.map((station, i) => {
+        const isChecked  = selected.includes(station.id);
+        const isDisabled = !isChecked && selected.length >= max;
+
+        return (
+          <label
+            key={station.id}
+            className="flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors"
+            style={{
+              background    : isChecked ? '#f0f7f0' : i % 2 === 0 ? '#fff' : '#fdf8f0',
+              borderTop     : i > 0 ? '1px solid #f0e8d6' : 'none',
+              opacity       : isDisabled ? 0.45 : 1,
+              cursor        : isDisabled ? 'not-allowed' : 'pointer',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={isChecked}
+              disabled={isDisabled}
+              onChange={() => toggle(station.id)}
+              style={{ accentColor: '#1a3d1c', width: 14, height: 14, flexShrink: 0 }}
+            />
+            <span className="flex-1 text-sm" style={{ color: '#1c1c1c' }}>
+              {station.name}
+            </span>
+            {station.code && (
+              <span
+                className="text-xs px-1.5 py-0.5 rounded"
+                style={{ background: '#e8f0e8', color: '#2d6a4f', fontFamily: 'monospace' }}
+              >
+                {station.code}
+              </span>
+            )}
+            {isChecked && (
+              <CheckSquare size={14} style={{ color: '#1a3d1c', flexShrink: 0 }} />
+            )}
+          </label>
+        );
+      })}
+    </div>
+  );
+};
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -67,7 +149,7 @@ const SuperAdminUsers = () => {
   const [selectedUserId, setSelectedUserId] = useState<number | ''>('');
   const [isTeamLead, setIsTeamLead]         = useState(false);
 
-  // ── Fetch on mount ───────────────────────────────────────────────────────────
+  // ── Fetch on mount ──────────────────────────────────────────────────────────
   useEffect(() => {
     dispatch(resetUserSuccess());
     dispatch(resetTeamSuccess());
@@ -76,7 +158,7 @@ const SuperAdminUsers = () => {
     dispatch(fetchStations());
   }, [dispatch]);
 
-  // ── User action success ──────────────────────────────────────────────────────
+  // ── Toasts ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!userSuccess) return;
     toast.success('User operation completed!');
@@ -84,7 +166,6 @@ const SuperAdminUsers = () => {
     dispatch(fetchUsers());
   }, [userSuccess, dispatch]);
 
-  // ── Team action success ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!teamSuccess) return;
     toast.success('Team operation completed!');
@@ -92,7 +173,6 @@ const SuperAdminUsers = () => {
     dispatch(fetchTeams());
   }, [teamSuccess, dispatch]);
 
-  // ── Error toasts ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!userError) return;
     toast.error(userError);
@@ -105,7 +185,7 @@ const SuperAdminUsers = () => {
     dispatch(clearTeamError());
   }, [teamError, dispatch]);
 
-  // ── Handlers ─────────────────────────────────────────────────────────────────
+  // ── Handlers ────────────────────────────────────────────────────────────────
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -118,37 +198,21 @@ const SuperAdminUsers = () => {
       return;
     }
 
-    const payload: {
-      email: string;
-      full_name: string;
-      role: 'user' | 'admin' | 'super_admin';
-      pj_number: string;
-      station_ids?: number[];
-    } = {
-      email: newUser.email,
-      full_name: newUser.full_name,
-      role: newUser.role,
-      pj_number: newUser.pj_number,
-    };
-
-    if (newUser.role === 'admin') {
-      payload.station_ids = newUser.station_ids;
-    }
-
-    await dispatch(createUser(payload));
+    await dispatch(createUser({
+      email       : newUser.email,
+      full_name   : newUser.full_name,
+      role        : newUser.role,
+      pj_number   : newUser.pj_number,
+      ...(newUser.role === 'admin' && { station_ids: newUser.station_ids }),
+    }));
     setNewUser(EMPTY_USER);
   };
 
   const handleCreateTeam = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTeam.name.trim()) {
-      toast.error('Team name is required.');
-      return;
-    }
-    await dispatch(createTeam({
-      name:       newTeam.name,
-      station_id: newTeam.station_id ? Number(newTeam.station_id) : null,
-    }));
+    if (!newTeam.name.trim()) { toast.error('Team name is required.'); return; }
+    // No station_id – teams are station‑agnostic
+    await dispatch(createTeam({ name: newTeam.name }));
     setNewTeam(EMPTY_TEAM);
   };
 
@@ -158,18 +222,17 @@ const SuperAdminUsers = () => {
       return;
     }
     await dispatch(addTeamMember({
-      team_id:      selectedTeamId as number,
-      user_id:      selectedUserId as number,
-      is_team_lead: isTeamLead,
+      team_id      : selectedTeamId as number,
+      user_id      : selectedUserId as number,
+      is_team_lead : isTeamLead,
     }));
     setSelectedTeamId('');
     setSelectedUserId('');
     setIsTeamLead(false);
   };
 
-  const handleRemoveMember = (teamId: number, userId: number) => {
+  const handleRemoveMember = (teamId: number, userId: number) =>
     dispatch(removeTeamMember({ team_id: teamId, user_id: userId }));
-  };
 
   const handleDeleteUser = async (user: User) => {
     if (!window.confirm(`Delete ${user.full_name}? This cannot be undone.`)) return;
@@ -184,8 +247,8 @@ const SuperAdminUsers = () => {
   const getRoleBadge = (role: string) => {
     switch (role) {
       case 'super_admin': return 'bg-red-100 text-red-700';
-      case 'admin':       return 'bg-[#c9a84c]/20 text-[#c9a84c]';
-      default:            return 'bg-[#a8c5a0]/20 text-[#2d6a4f]';
+      case 'admin'      : return 'bg-[#c9a84c]/20 text-[#c9a84c]';
+      default           : return 'bg-[#a8c5a0]/20 text-[#2d6a4f]';
     }
   };
 
@@ -201,7 +264,9 @@ const SuperAdminUsers = () => {
 
   return (
     <div className="w-full p-4 sm:p-6" style={{ background: '#fdf8f0' }}>
-      <h1 className="text-2xl sm:text-3xl font-bold mb-6" style={{ color: '#1a3d1c' }}>User & Team Management</h1>
+      <h1 className="text-2xl sm:text-3xl font-bold mb-6" style={{ color: '#1a3d1c' }}>
+        User & Team Management
+      </h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
@@ -212,112 +277,82 @@ const SuperAdminUsers = () => {
           <div className="rounded-xl overflow-hidden" style={{ background: '#fff', border: '1.5px solid #d6c9a8' }}>
             <div className="px-5 py-4 border-b" style={{ background: '#1a3d1c', borderColor: '#2c5f2e' }}>
               <h2 className="text-sm font-semibold flex items-center gap-2" style={{ color: '#fdf8f0' }}>
-                <Plus size={18} style={{ color: '#c9a84c' }} />
-                Create New User
+                <Plus size={18} style={{ color: '#c9a84c' }} /> Create New User
               </h2>
             </div>
+
             <form onSubmit={handleCreateUser} className="p-5 space-y-4">
               <input
-                type="text"
-                placeholder="Full Name *"
+                type="text" placeholder="Full Name *"
                 value={newUser.full_name}
                 onChange={(e) => setNewUser(p => ({ ...p, full_name: e.target.value }))}
-                className="w-full px-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 transition-colors"
-                style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c' }}
-                onFocus={(e) => (e.currentTarget.style.borderColor = '#c9a84c')}
-                onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
+                className={inputCls} style={inputStyle} onFocus={onFocus} onBlur={onBlur}
               />
               <input
-                type="email"
-                placeholder="Email *"
+                type="email" placeholder="Email *"
                 value={newUser.email}
                 onChange={(e) => setNewUser(p => ({ ...p, email: e.target.value }))}
-                className="w-full px-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 transition-colors"
-                style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c' }}
-                onFocus={(e) => (e.currentTarget.style.borderColor = '#c9a84c')}
-                onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
+                className={inputCls} style={inputStyle} onFocus={onFocus} onBlur={onBlur}
               />
               <input
-                type="text"
-                placeholder="PJ Number *"
+                type="text" placeholder="PJ Number *"
                 value={newUser.pj_number}
                 onChange={(e) => setNewUser(p => ({ ...p, pj_number: e.target.value }))}
-                className="w-full px-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 transition-colors"
-                style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c' }}
-                onFocus={(e) => (e.currentTarget.style.borderColor = '#c9a84c')}
-                onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
+                className={inputCls} style={inputStyle} onFocus={onFocus} onBlur={onBlur}
               />
               <select
                 value={newUser.role}
                 onChange={(e) => {
                   const role = e.target.value as NewUserForm['role'];
-                  setNewUser(p => ({ ...p, role, station_ids: role === 'admin' ? p.station_ids : [] }));
+                  setNewUser(p => ({ ...p, role, station_ids: [] }));
                 }}
-                className="w-full px-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 transition-colors"
-                style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c' }}
-                onFocus={(e) => (e.currentTarget.style.borderColor = '#c9a84c')}
-                onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
+                className={inputCls} style={inputStyle} onFocus={onFocus} onBlur={onBlur}
               >
                 <option value="user">User</option>
                 <option value="admin">Admin</option>
                 <option value="super_admin">Super Admin</option>
               </select>
 
-              {/* Station selection – only for admins */}
+              {/* Station picker – only for admin role */}
               {newUser.role === 'admin' && (
                 <div>
-                  <label className="block text-xs font-medium mb-1" style={{ color: '#1a3d1c' }}>
-                    Assign to Station(s) *
-                  </label>
-                  <div className="relative">
-                    <Building2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: '#a8c5a0' }} />
-                    {stationsLoading ? (
-                      <div className="w-full pl-9 pr-3 py-2 rounded-md text-sm border border-[#d6c9a8] bg-white flex items-center gap-2">
-                        <Loader2 size={14} className="animate-spin" style={{ color: '#c9a84c' }} />
-                        <span style={{ color: '#6b7280' }}>Loading stations...</span>
-                      </div>
-                    ) : stations.length === 0 ? (
-                      <div className="w-full pl-9 pr-3 py-2 rounded-md text-sm border border-[#d6c9a8] bg-white text-red-500">
-                        No stations found. Please create stations first.
-                      </div>
-                    ) : (
-                      <select
-                        multiple
-                        value={newUser.station_ids.map(String)}
-                        onChange={(e) => {
-                          const selected = Array.from(e.target.selectedOptions, (opt) => Number(opt.value));
-                          setNewUser(p => ({ ...p, station_ids: selected }));
-                        }}
-                        className="w-full pl-9 pr-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 transition-colors min-h-[100px]"
-                        style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c' }}
-                        onFocus={(e) => (e.currentTarget.style.borderColor = '#c9a84c')}
-                        onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: '#1a3d1c' }}>
+                      <Building2 size={13} />
+                      Assign Courts / Stations *
+                    </label>
+                    {newUser.station_ids.length > 0 && (
+                      <span
+                        className="text-xs px-2 py-0.5 rounded-full font-medium"
+                        style={{ background: '#e8f0e8', color: '#1a3d1c' }}
                       >
-                        {stations.map((station) => (
-                          <option key={station.id} value={station.id}>
-                            {station.name} ({station.code})
-                          </option>
-                        ))}
-                      </select>
+                        {newUser.station_ids.length} selected
+                      </span>
                     )}
                   </div>
-                  {stations.length > 0 && (
-                    <p className="text-[10px] mt-1" style={{ color: '#a8c5a0' }}>
-                      Hold Ctrl (Cmd on Mac) to select multiple stations.
-                    </p>
-                  )}
+
+                  <StationPicker
+                    stations={stations}
+                    selected={newUser.station_ids}
+                    onChange={(ids) => setNewUser(p => ({ ...p, station_ids: ids }))}
+                    loading={stationsLoading}
+                    max={5}
+                  />
+
+                  <p className="text-[10px] mt-1.5" style={{ color: '#a8c5a0' }}>
+                    Select between 1 and 5 courts this admin will manage.
+                  </p>
                 </div>
               )}
 
               <button
-                type="submit"
-                disabled={usersLoading}
-                className="w-full px-4 py-2 rounded-md text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                type="submit" disabled={usersLoading}
+                className="w-full px-4 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ background: '#1a3d1c', color: '#fdf8f0' }}
                 onMouseEnter={(e) => { if (!usersLoading) e.currentTarget.style.background = '#2d6a4f'; }}
                 onMouseLeave={(e) => { if (!usersLoading) e.currentTarget.style.background = '#1a3d1c'; }}
               >
-                Create User
+                {usersLoading ? 'Creating…' : 'Create User'}
               </button>
             </form>
           </div>
@@ -349,6 +384,15 @@ const SuperAdminUsers = () => {
                         {user.pj_number && (
                           <span className="text-xs" style={{ color: '#a8c5a0' }}>PJ: {user.pj_number}</span>
                         )}
+                        {user.role === 'admin' && user.station_ids?.length > 0 && (
+                          <span
+                            className="text-xs px-1.5 py-0.5 rounded flex items-center gap-1"
+                            style={{ background: '#e8f0e8', color: '#2d6a4f' }}
+                          >
+                            <Building2 size={10} />
+                            {user.station_ids.length} court{user.station_ids.length > 1 ? 's' : ''}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <button
@@ -371,77 +415,52 @@ const SuperAdminUsers = () => {
         {/* ── RIGHT: Teams ── */}
         <div className="space-y-6">
 
-          {/* Create Team */}
+          {/* Create Team – station dropdown removed */}
           <div className="rounded-xl overflow-hidden" style={{ background: '#fff', border: '1.5px solid #d6c9a8' }}>
             <div className="px-5 py-4 border-b" style={{ background: '#1a3d1c', borderColor: '#2c5f2e' }}>
               <h2 className="text-sm font-semibold flex items-center gap-2" style={{ color: '#fdf8f0' }}>
-                <Plus size={18} style={{ color: '#c9a84c' }} />
-                Create New Team
+                <Plus size={18} style={{ color: '#c9a84c' }} /> Create New Team
               </h2>
             </div>
             <form onSubmit={handleCreateTeam} className="p-5 space-y-4">
               <input
-                type="text"
-                placeholder="Team Name *"
+                type="text" placeholder="Team Name *"
                 value={newTeam.name}
                 onChange={(e) => setNewTeam(p => ({ ...p, name: e.target.value }))}
-                className="w-full px-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 transition-colors"
-                style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c' }}
-                onFocus={(e) => (e.currentTarget.style.borderColor = '#c9a84c')}
-                onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
-              />
-              <input
-                type="number"
-                placeholder="Station ID (optional)"
-                value={newTeam.station_id}
-                onChange={(e) => setNewTeam(p => ({ ...p, station_id: e.target.value }))}
-                className="w-full px-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 transition-colors"
-                style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c' }}
-                onFocus={(e) => (e.currentTarget.style.borderColor = '#c9a84c')}
-                onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
+                className={inputCls} style={inputStyle} onFocus={onFocus} onBlur={onBlur}
               />
               <button
-                type="submit"
-                disabled={teamsLoading}
-                className="w-full px-4 py-2 rounded-md text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                type="submit" disabled={teamsLoading}
+                className="w-full px-4 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ background: '#1a3d1c', color: '#fdf8f0' }}
                 onMouseEnter={(e) => { if (!teamsLoading) e.currentTarget.style.background = '#2d6a4f'; }}
                 onMouseLeave={(e) => { if (!teamsLoading) e.currentTarget.style.background = '#1a3d1c'; }}
               >
-                Create Team
+                {teamsLoading ? 'Creating…' : 'Create Team'}
               </button>
             </form>
           </div>
 
-          {/* Add Member to Team */}
+          {/* Add Member to Team (unchanged – no station needed) */}
           <div className="rounded-xl overflow-hidden" style={{ background: '#fff', border: '1.5px solid #d6c9a8' }}>
             <div className="px-5 py-4 border-b" style={{ background: '#1a3d1c', borderColor: '#2c5f2e' }}>
               <h2 className="text-sm font-semibold flex items-center gap-2" style={{ color: '#fdf8f0' }}>
-                <UserPlus size={18} style={{ color: '#c9a84c' }} />
-                Add Member to Team
+                <UserPlus size={18} style={{ color: '#c9a84c' }} /> Add Member to Team
               </h2>
             </div>
             <div className="p-5 space-y-4">
               <select
                 value={selectedTeamId}
                 onChange={(e) => setSelectedTeamId(Number(e.target.value))}
-                className="w-full px-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 transition-colors"
-                style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c' }}
-                onFocus={(e) => (e.currentTarget.style.borderColor = '#c9a84c')}
-                onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
+                className={inputCls} style={inputStyle} onFocus={onFocus} onBlur={onBlur}
               >
                 <option value="">-- Select a team --</option>
-                {teams.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
+                {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
               <select
                 value={selectedUserId}
                 onChange={(e) => setSelectedUserId(Number(e.target.value))}
-                className="w-full px-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 transition-colors"
-                style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c' }}
-                onFocus={(e) => (e.currentTarget.style.borderColor = '#c9a84c')}
-                onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
+                className={inputCls} style={inputStyle} onFocus={onFocus} onBlur={onBlur}
               >
                 <option value="">-- Select a user --</option>
                 {users.map((u) => (
@@ -452,10 +471,8 @@ const SuperAdminUsers = () => {
               </select>
               <label className="flex items-center gap-2 cursor-pointer text-sm" style={{ color: '#1a3d1c' }}>
                 <input
-                  type="checkbox"
-                  checked={isTeamLead}
+                  type="checkbox" checked={isTeamLead}
                   onChange={(e) => setIsTeamLead(e.target.checked)}
-                  className="rounded focus:ring-2"
                   style={{ borderColor: '#d6c9a8', accentColor: '#c9a84c' }}
                 />
                 Set as Team Lead
@@ -463,7 +480,7 @@ const SuperAdminUsers = () => {
               <button
                 onClick={handleAddMember}
                 disabled={selectedTeamId === '' || selectedUserId === ''}
-                className="w-full px-4 py-2 rounded-md text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full px-4 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ background: '#1a3d1c', color: '#fdf8f0' }}
                 onMouseEnter={(e) => { if (selectedTeamId !== '' && selectedUserId !== '') e.currentTarget.style.background = '#2d6a4f'; }}
                 onMouseLeave={(e) => { if (selectedTeamId !== '' && selectedUserId !== '') e.currentTarget.style.background = '#1a3d1c'; }}
@@ -492,9 +509,7 @@ const SuperAdminUsers = () => {
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-2 gap-1">
                       <p className="font-medium text-sm" style={{ color: '#1a3d1c' }}>{team.name}</p>
-                      <span className="text-xs" style={{ color: '#a8c5a0' }}>
-                        Lead: {getTeamLead(team)}
-                      </span>
+                      <span className="text-xs" style={{ color: '#a8c5a0' }}>Lead: {getTeamLead(team)}</span>
                     </div>
                     {team.members?.length ? (
                       <div className="space-y-1">
@@ -507,7 +522,8 @@ const SuperAdminUsers = () => {
                             <span style={{ color: '#1c1c1c' }}>
                               {member.full_name}
                               {member.is_team_lead && (
-                                <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px]" style={{ background: '#c9a84c/20', color: '#c9a84c' }}>
+                                <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px]"
+                                  style={{ background: 'rgba(201,168,76,0.15)', color: '#c9a84c' }}>
                                   Lead
                                 </span>
                               )}

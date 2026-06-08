@@ -18,6 +18,8 @@ const AdminTeams = () => {
 
   const { teams, isLoading: teamsLoading, error: teamError, actionSuccess: teamSuccess } = useAppSelector((s) => s.team);
   const { users, isLoading: usersLoading } = useAppSelector((s) => s.user);
+  // currentUser no longer needed – teams are station‑agnostic
+  // const { user: currentUser } = useAppSelector((s) => s.auth);
 
   const isLoading = teamsLoading || usersLoading;
 
@@ -28,14 +30,14 @@ const AdminTeams = () => {
   const [selectedUserId, setSelectedUserId]             = useState<number | ''>('');
   const [isTeamLead, setIsTeamLead]                     = useState(false);
 
-  // ── Fetch on mount ───────────────────────────────────────────────────────────
+  // ── Fetch data on mount ───────────────────────────────────────────────────
   useEffect(() => {
     dispatch(resetTeamSuccess());
     dispatch(fetchTeams());
     dispatch(fetchUsers());
   }, [dispatch]);
 
-  // ── Action success ───────────────────────────────────────────────────────────
+  // ── Action success ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!teamSuccess) return;
     toast.success('Operation completed successfully!');
@@ -43,13 +45,13 @@ const AdminTeams = () => {
     dispatch(fetchTeams());
   }, [teamSuccess, dispatch]);
 
-  // ── Handlers ─────────────────────────────────────────────────────────────────
-
+  // ── Handlers ─────────────────────────────────────────────────────────────
   const handleCreateTeam = async () => {
     if (!newTeamName.trim()) {
       toast.error('Please enter a team name');
       return;
     }
+
     const result = await dispatch(createTeam({ name: newTeamName }));
     if (createTeam.fulfilled.match(result)) {
       toast.success(`Team "${newTeamName}" created successfully!`);
@@ -92,11 +94,10 @@ const AdminTeams = () => {
     ? users.filter(u => !selectedTeam.members?.some(m => m.user_id === u.id))
     : users;
 
-  // ── Render ───────────────────────────────────────────────────────────────────
-
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="w-full p-4 sm:p-6" style={{ background: '#fdf8f0' }}>
-      {/* ── Header ── */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold font-serif" style={{ color: '#1a3d1c' }}>Teams Management</h1>
@@ -150,7 +151,7 @@ const AdminTeams = () => {
           </p>
         </div>
       ) : (
-        /* ── Teams Grid (responsive cards) ── */
+        /* Teams Grid */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {teams.map((team) => (
             <div
@@ -159,7 +160,6 @@ const AdminTeams = () => {
               style={{ background: '#fff', border: '1.5px solid #d6c9a8' }}
             >
               <div className="p-4 sm:p-5">
-                {/* Team header */}
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex items-center gap-2">
                     <Users size={20} style={{ color: '#c9a84c' }} />
@@ -179,12 +179,10 @@ const AdminTeams = () => {
                   </button>
                 </div>
 
-                {/* Member count */}
                 <p className="text-xs mb-4" style={{ color: '#a8c5a0' }}>
                   {team.members?.length ?? 0} member{(team.members?.length ?? 0) !== 1 ? 's' : ''}
                 </p>
 
-                {/* Members list */}
                 {team.members?.length ? (
                   <div className="space-y-2 max-h-64 overflow-y-auto">
                     {team.members.map((member) => (
@@ -233,7 +231,7 @@ const AdminTeams = () => {
         </div>
       )}
 
-      {/* ── Create Team Modal ── */}
+      {/* ── Create Team Modal (no station selector) ── */}
       {createTeamDialogOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div
@@ -264,6 +262,7 @@ const AdminTeams = () => {
                 onFocus={(e) => (e.currentTarget.style.borderColor = '#c9a84c')}
                 onBlur={(e) => (e.currentTarget.style.borderColor = '#d6c9a8')}
               />
+
               <div className="flex justify-end space-x-2 mt-6">
                 <button
                   onClick={() => { setCreateTeamDialogOpen(false); setNewTeamName(''); }}
