@@ -1,11 +1,14 @@
 // src/components/admin/AdminComponents.tsx
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchComponents, type Component } from '../../store/slices/componentSlice';
 import {
+  fetchAssignments,
   createAssignment,
   updateAssignment,
   deleteAssignment,
+  clearAssignmentError,
+  resetAssignmentSuccess,
   type Assignment,
 } from '../../store/slices/assignmentSlice';
 import { fetchUsers } from '../../store/slices/userSlice';
@@ -13,13 +16,13 @@ import { fetchStations, type Station } from '../../store/slices/stationSlice';
 import type { AppDispatch, RootState } from '../../store/store';
 import { Loader2, X, Building2 } from 'lucide-react';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type ViewTab = 'admin' | 'member' | 'overview';
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
-const STATUS_STYLES: Record<Assignment['status'], { label: string; classes: string }> = {
+const STATUS_STYLES: { [key in Assignment['status']]: { label: string; classes: string } } = {
   pending:     { label: 'Pending',     classes: 'bg-amber-100 text-amber-800' },
   in_progress: { label: 'In Progress', classes: 'bg-blue-100 text-blue-800'   },
   submitted:   { label: 'Submitted',   classes: 'bg-green-100 text-green-800' },
@@ -51,6 +54,7 @@ const Sidebar: React.FC<{
           <button
             key={c.id}
             onClick={() => onSelect(i)}
+            type="button"
             className="w-full text-left flex items-center gap-2 px-3 py-2 mx-1.5 rounded-lg transition-colors"
             style={{ width: 'calc(100% - 12px)', background: isActive ? '#c9a84c' : 'transparent' }}
             onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
@@ -136,7 +140,11 @@ const AssignModal: React.FC<AssignModalProps> = ({
             <h3 className="text-[15px] font-semibold" style={{ color: '#fdf8f0' }}>Assign Inspection Form</h3>
             <p className="text-[12px] mt-0.5" style={{ color: '#a8c5a0' }}>{component.name}</p>
           </div>
-          <button onClick={onClose} className="rounded p-1 transition-colors" style={{ color: '#a8c5a0' }}
+          <button
+            onClick={onClose}
+            type="button"
+            className="rounded p-1 transition-colors"
+            style={{ color: '#a8c5a0' }}
             onMouseEnter={(e) => (e.currentTarget.style.color = '#fdf8f0')}
             onMouseLeave={(e) => (e.currentTarget.style.color = '#a8c5a0')}
           >
@@ -146,7 +154,8 @@ const AssignModal: React.FC<AssignModalProps> = ({
 
         <div className="p-5">
           {existingAssignment && (
-            <div className="mb-4 px-3 py-2.5 rounded-lg text-[12px]"
+            <div
+              className="mb-4 px-3 py-2.5 rounded-lg text-[12px]"
               style={{ background: '#fff3cd', border: '1.5px solid #ffc107', color: '#856404' }}
             >
               Currently assigned to <strong>{existingAssignment.user_full_name}</strong>.
@@ -170,7 +179,10 @@ const AssignModal: React.FC<AssignModalProps> = ({
           </select>
 
           <div className="flex justify-end gap-2">
-            <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            <button
+              onClick={onClose}
+              type="button"
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
               style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#6b7280' }}
               onMouseEnter={(e) => (e.currentTarget.style.background = '#f0e8d6')}
               onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}
@@ -180,6 +192,7 @@ const AssignModal: React.FC<AssignModalProps> = ({
             <button
               onClick={() => selectedUserId !== '' && onAssign(selectedUserId as number)}
               disabled={selectedUserId === '' || isLoading}
+              type="button"
               className="px-4 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50"
               style={{ background: '#1a3d1c', color: '#fdf8f0' }}
               onMouseEnter={(e) => { if (selectedUserId !== '') e.currentTarget.style.background = '#2d6a4f'; }}
@@ -205,7 +218,6 @@ const AdminTab: React.FC<{
   onAssign: (componentId: number, userId: number) => void;
   onDelete: (assignmentId: number) => void;
 }> = ({ components, assignments, stationUsers, station, isLoading, onAssign, onDelete }) => {
-  const [localSelections, setLocalSelections] = useState<Record<number, number | ''>>({});
   const assignedCount = assignments.length;
 
   return (
@@ -218,7 +230,8 @@ const AdminTab: React.FC<{
               {station.name} — Assign each inspection section to a team member
             </p>
           </div>
-          <div className="ml-auto px-3 py-1 rounded-full text-[12px] font-semibold"
+          <div
+            className="ml-auto px-3 py-1 rounded-full text-[12px] font-semibold"
             style={{ background: 'rgba(201,168,76,0.15)', color: '#c9a84c', border: '1px solid rgba(201,168,76,0.3)' }}
           >
             {assignedCount} / {components.length} assigned
@@ -228,7 +241,6 @@ const AdminTab: React.FC<{
         <div className="divide-y divide-[#f0e8d6]" style={{ background: '#fdf8f0' }}>
           {components.map((c) => {
             const existing = assignments.find((a) => a.component_id === c.id);
-            const localVal = localSelections[c.id] ?? (existing?.user_id ?? '');
 
             return (
               <div
@@ -244,10 +256,9 @@ const AdminTab: React.FC<{
                 <select
                   className="rounded-lg px-3 py-1.5 text-[13px] outline-none min-w-[180px]"
                   style={{ border: '1.5px solid #d6c9a8', background: '#fff', color: '#1c1c1c', fontFamily: 'inherit' }}
-                  value={localVal}
+                  value={existing?.user_id ?? ''}
                   onChange={(e) => {
                     const uid = e.target.value === '' ? '' : Number(e.target.value);
-                    setLocalSelections((prev) => ({ ...prev, [c.id]: uid }));
                     if (uid !== '') onAssign(c.id, uid as number);
                   }}
                 >
@@ -273,6 +284,7 @@ const AdminTab: React.FC<{
                   <button
                     onClick={() => onDelete(existing.id)}
                     disabled={isLoading}
+                    type="button"
                     className="text-[11px] font-medium transition-colors disabled:opacity-50"
                     style={{ color: '#c0392b' }}
                     onMouseEnter={(e) => (e.currentTarget.style.color = '#922b21')}
@@ -402,16 +414,22 @@ const OverviewTab: React.FC<{
           </span>
         </div>
         <div className="h-2.5 rounded-full overflow-hidden" style={{ background: '#f0e8d6' }}>
-          <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: '#1a3d1c' }} />
+          <div
+            className="h-full rounded-full transition-all duration-500"
+            style={{ width: `${pct}%`, background: '#1a3d1c' }}
+          />
         </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
         {byUser.filter((u) => u.components.length > 0).map(({ user, components: uComps }) => (
-          <div key={user.id} className="rounded-xl p-4"
+          <div
+            key={user.id}
+            className="rounded-xl p-4"
             style={{ background: '#fff', border: '1.5px solid #d6c9a8', boxShadow: '0 2px 8px rgba(26,71,49,0.06)' }}
           >
-            <div className="w-9 h-9 rounded-full flex items-center justify-center text-[15px] font-bold mb-2"
+            <div
+              className="w-9 h-9 rounded-full flex items-center justify-center text-[15px] font-bold mb-2"
               style={{ background: '#1a3d1c', color: '#c9a84c' }}
             >
               {user.full_name[0]?.toUpperCase()}
@@ -422,7 +440,9 @@ const OverviewTab: React.FC<{
             </p>
             <div className="flex flex-col gap-1">
               {uComps.map((c) => (
-                <div key={c.id} className="text-[11px] px-2 py-1 rounded"
+                <div
+                  key={c.id}
+                  className="text-[11px] px-2 py-1 rounded"
                   style={{ background: '#f0e8d6', color: '#2d6a4f', fontWeight: 500 }}
                 >
                   {c.name}
@@ -433,10 +453,12 @@ const OverviewTab: React.FC<{
         ))}
 
         {unassigned.length > 0 && (
-          <div className="rounded-xl p-4"
+          <div
+            className="rounded-xl p-4"
             style={{ background: '#fff', border: '1.5px solid #ffc107', boxShadow: '0 2px 8px rgba(26,71,49,0.06)' }}
           >
-            <div className="w-9 h-9 rounded-full flex items-center justify-center text-[15px] font-bold mb-2"
+            <div
+              className="w-9 h-9 rounded-full flex items-center justify-center text-[15px] font-bold mb-2"
               style={{ background: '#ffeeba', color: '#856404' }}
             >?</div>
             <h3 className="text-[14px] font-semibold" style={{ color: '#856404' }}>Unassigned</h3>
@@ -445,7 +467,9 @@ const OverviewTab: React.FC<{
             </p>
             <div className="flex flex-col gap-1">
               {unassigned.map((c) => (
-                <div key={c.id} className="text-[11px] px-2 py-1 rounded"
+                <div
+                  key={c.id}
+                  className="text-[11px] px-2 py-1 rounded"
                   style={{ background: '#fff3cd', color: '#856404', fontWeight: 500 }}
                 >
                   {c.name}
@@ -456,7 +480,10 @@ const OverviewTab: React.FC<{
         )}
       </div>
 
-      <div className="rounded-xl overflow-hidden" style={{ border: '1.5px solid #d6c9a8', boxShadow: '0 2px 8px rgba(26,71,49,0.06)' }}>
+      <div
+        className="rounded-xl overflow-hidden"
+        style={{ border: '1.5px solid #d6c9a8', boxShadow: '0 2px 8px rgba(26,71,49,0.06)' }}
+      >
         <div className="px-5 py-3.5 flex items-center gap-3" style={{ background: '#1a3d1c' }}>
           <div>
             <h3 className="text-[14px] font-semibold" style={{ color: '#fdf8f0' }}>Assignment Summary</h3>
@@ -468,7 +495,11 @@ const OverviewTab: React.FC<{
             <thead>
               <tr style={{ background: '#1a3d1c' }}>
                 {['#', 'Section', 'Assigned To', 'Status'].map((h) => (
-                  <th key={h} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: '#c9a84c' }}>
+                  <th
+                    key={h}
+                    className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap"
+                    style={{ color: '#c9a84c' }}
+                  >
                     {h}
                   </th>
                 ))}
@@ -478,7 +509,10 @@ const OverviewTab: React.FC<{
               {components.map((c, i) => {
                 const a = assignments.find((x) => x.component_id === c.id);
                 return (
-                  <tr key={c.id} style={{ borderBottom: '1px solid #f0e8d6', background: i % 2 === 0 ? '#fdf8f0' : '#fff' }}>
+                  <tr
+                    key={c.id}
+                    style={{ borderBottom: '1px solid #f0e8d6', background: i % 2 === 0 ? '#fdf8f0' : '#fff' }}
+                  >
                     <td className="px-4 py-2.5 text-[12px]" style={{ color: '#6b7280' }}>{i + 1}</td>
                     <td className="px-4 py-2.5">
                       <p className="text-[13px] font-semibold" style={{ color: '#1a3d1c' }}>{c.name}</p>
@@ -511,17 +545,26 @@ const OverviewTab: React.FC<{
 const AdminComponents: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
 
-  const { components, isLoading: componentsLoading, error: componentError, actionSuccess: componentSuccess } = useSelector(
+  const { components, isLoading: componentsLoading, error: componentError } = useSelector(
     (state: RootState) => state.component,
   );
-  const { assignments, isLoading: assignmentsLoading, error: assignmentError, actionSuccess: assignmentSuccess } = useSelector(
+  const { assignments, isLoading: assignmentsLoading, error: assignmentError, actionSuccess } = useSelector(
     (state: RootState) => state.assignment,
   );
   const { users } = useSelector((state: RootState) => state.user);
   const { stations, isLoading: stationsLoading } = useSelector((state: RootState) => state.station);
-  const { user: currentUser } = useSelector((state: RootState) => state.auth); // <-- get current user (admin or super_admin)
+  const { user: currentUser } = useSelector((state: RootState) => state.auth);
 
-  const [activeStationId, setActiveStationId] = useState<number | ''>('');
+  // Initialize activeStationId without causing a warning (lazy initializer)
+  const [activeStationId, setActiveStationId] = useState<number | ''>(() => {
+    // For admin, pre‑select the first station they have (if any)
+    if (currentUser?.role === 'admin') {
+      const ids = currentUser.station_ids ?? [];
+      return ids.length > 0 ? ids[0] : '';
+    }
+    return '';
+  });
+
   const [activeView, setActiveView] = useState<ViewTab>('admin');
   const [activeIndex, setActiveIndex] = useState(0);
   const [showAssignModal, setShowAssignModal] = useState(false);
@@ -529,76 +572,99 @@ const AdminComponents: React.FC = () => {
 
   const isLoading = componentsLoading || assignmentsLoading;
   const error = componentError || assignmentError;
-  const actionSuccess = componentSuccess || assignmentSuccess;
 
-  // ── Load once on mount ──────────────────────────────────────────────────────
-  useEffect(() => {
-    dispatch(fetchComponents({}));
-    dispatch(fetchUsers());
-    dispatch(fetchStations());
-  }, [dispatch]);
-
-  const handleStationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const val = e.target.value;
-    setActiveStationId(val === '' ? '' : Number(val));
-    setActiveIndex(0);
-    setActiveView('admin');
-  };
-
-  // ── Derived ─────────────────────────────────────────────────────────────────
-
+  // ── Memoized values (must be before any conditional return) ─────────────────
   const activeStation = useMemo(
     () => stations.find((s) => s.id === activeStationId) ?? null,
     [stations, activeStationId],
   );
 
-  // NEW: For admin role, show all users from all assigned stations (mobile team).
-  // For super_admin, show all users. For no station selected, return empty array.
+  // Users visible in the dropdown: for admin, show all users from any station in station_ids.
+  // For super_admin, show users from the selected station only.
   const stationUsers = useMemo(() => {
     if (activeStationId === '') return [];
-
     if (currentUser?.role === 'admin') {
       const adminStationIds = currentUser.station_ids ?? [];
       if (adminStationIds.length === 0) return [];
-      // Return users whose station_id is in the admin's list (regardless of selected court)
       return users.filter((u) => u.station_id !== null && adminStationIds.includes(u.station_id));
     }
-
-    // Super_admin: show all users (or you can filter by the selected station if desired)
-    return users;
+    // super_admin
+    return users.filter((u) => u.station_id === activeStationId);
   }, [users, activeStationId, currentUser]);
 
   const currentComponent = components[activeIndex] ?? null;
+
   const assignmentForCurrent = useMemo(
     () => currentComponent ? assignments.find((a) => a.component_id === currentComponent.id) : undefined,
     [assignments, currentComponent],
   );
 
-  // ── Handlers ────────────────────────────────────────────────────────────────
+  const TABS: { key: ViewTab; label: string }[] = [
+    { key: 'admin',    label: '👤 Admin / Assign' },
+    { key: 'member',   label: '📋 Member View'    },
+    { key: 'overview', label: '📊 Team Overview'  },
+  ];
 
-  const handleAssignDirect = async (componentId: number, userId: number) => {
+  // Filter stations for the dropdown based on user role
+  const dropdownStations = useMemo(() => {
+    if (currentUser?.role === 'admin') {
+      const allowedIds = currentUser.station_ids ?? [];
+      return stations.filter((s) => allowedIds.includes(s.id));
+    }
+    return stations;
+  }, [stations, currentUser]);
+
+  // ── Load data on mount ─────────────────────────────────────────────────────
+  useEffect(() => {
+    dispatch(fetchUsers());
+    dispatch(fetchStations()); // Always fetch stations (needed for dropdown)
+  }, [dispatch]);
+
+  // ── Load components + assignments when station changes ─────────────────────
+  useEffect(() => {
+    if (activeStationId === '') return;
+    dispatch(fetchComponents({ station_id: activeStationId as number }));
+    dispatch(fetchAssignments({ station_id: activeStationId as number }));
+  }, [dispatch, activeStationId]);
+
+  // ── Reset success flag ─────────────────────────────────────────────────────
+  useEffect(() => {
+    if (actionSuccess) {
+      dispatch(resetAssignmentSuccess());
+    }
+  }, [actionSuccess, dispatch]);
+
+  // ── Handlers ───────────────────────────────────────────────────────────────
+
+  const handleStationChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    setActiveStationId(val === '' ? '' : Number(val));
+    setActiveIndex(0);
+    setActiveView('admin');
+  }, []);
+
+  const handleAssignDirect = useCallback(async (componentId: number, userId: number) => {
     const existing = assignments.find((a) => a.component_id === componentId);
     if (existing) {
       await dispatch(updateAssignment({ id: existing.id, user_id: userId }));
     } else {
       await dispatch(createAssignment({ component_id: componentId, user_id: userId }));
     }
-  };
+  }, [dispatch, assignments]);
 
-  const handleAssignFromModal = async (userId: number) => {
+  const handleAssignFromModal = useCallback(async (userId: number) => {
     if (!componentToAssign) return;
     await handleAssignDirect(componentToAssign.id, userId);
     setShowAssignModal(false);
     setComponentToAssign(null);
-  };
+  }, [componentToAssign, handleAssignDirect]);
 
-  const handleDelete = async (assignmentId: number) => {
+  const handleDelete = useCallback(async (assignmentId: number) => {
     if (!window.confirm('Remove this assignment?')) return;
     await dispatch(deleteAssignment(assignmentId));
-  };
+  }, [dispatch]);
 
-  // ── Loading state ───────────────────────────────────────────────────────────
-
+  // ── Loading state (conditional return after all hooks) ──────────────────────
   if (stationsLoading && stations.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -608,14 +674,7 @@ const AdminComponents: React.FC = () => {
     );
   }
 
-  const TABS: { key: ViewTab; label: string }[] = [
-    { key: 'admin',    label: '👤 Admin / Assign' },
-    { key: 'member',   label: '📋 Member View'    },
-    { key: 'overview', label: '📊 Team Overview'  },
-  ];
-
-  // ── Render ──────────────────────────────────────────────────────────────────
-
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="flex h-full overflow-hidden" style={{ background: '#fdf8f0' }}>
 
@@ -642,7 +701,7 @@ const AdminComponents: React.FC = () => {
               onChange={handleStationChange}
             >
               <option value="">— Select a Court —</option>
-              {stations.map((s) => (
+              {dropdownStations.map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
@@ -653,6 +712,7 @@ const AdminComponents: React.FC = () => {
               key={t.key}
               onClick={() => setActiveView(t.key)}
               disabled={activeStationId === ''}
+              type="button"
               className="px-4 py-1.5 rounded-lg text-[13px] font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               style={{
                 background: activeView === t.key && activeStationId !== '' ? '#1a3d1c' : '#fff',
@@ -665,13 +725,17 @@ const AdminComponents: React.FC = () => {
           ))}
 
           <div className="ml-auto flex items-center gap-3">
-            <div className="px-3 py-1 rounded-full text-[12px] font-semibold" style={{ background: '#f0e8d6', color: '#2d6a4f' }}>
+            <div
+              className="px-3 py-1 rounded-full text-[12px] font-semibold"
+              style={{ background: '#f0e8d6', color: '#2d6a4f' }}
+            >
               {assignments.length} / {components.length} assigned
             </div>
 
             {currentComponent && activeView === 'member' && activeStation && (
               <button
                 onClick={() => { setComponentToAssign(currentComponent); setShowAssignModal(true); }}
+                type="button"
                 className="px-4 py-1.5 rounded-lg text-[13px] font-semibold transition-colors"
                 style={{ background: '#c9a84c', color: '#1a3d1c' }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = '#e9c46a')}
@@ -686,14 +750,23 @@ const AdminComponents: React.FC = () => {
         {/* Banners */}
         <div className="px-6 pt-4 flex-shrink-0">
           {error && (
-            <div className="flex items-center justify-between px-4 py-3 rounded-lg mb-3 text-sm"
+            <div
+              className="flex items-center justify-between px-4 py-3 rounded-lg mb-3 text-sm"
               style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c' }}
             >
               <span>{error}</span>
+              <button
+                onClick={() => dispatch(clearAssignmentError())}
+                type="button"
+                className="ml-3"
+              >
+                <X size={14} />
+              </button>
             </div>
           )}
           {actionSuccess && (
-            <div className="px-4 py-3 rounded-lg mb-3 text-sm"
+            <div
+              className="px-4 py-3 rounded-lg mb-3 text-sm"
               style={{ background: '#d4edda', border: '1px solid #c3e6cb', color: '#155724' }}
             >
               ✓ Action completed successfully.
