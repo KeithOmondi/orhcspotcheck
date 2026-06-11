@@ -1,13 +1,14 @@
 // src/store/slices/userAssignmentSlice.ts
 import { createSlice, createAsyncThunk, type PayloadAction } from '@reduxjs/toolkit';
 import axiosClient from '../../api/api';
+import type { Station } from './stationSlice';
 
-// ─── TYPES ──────────────────────────────────────────────────────────────
+// ─── TYPES ───────────────────────────────────────────────────────────────────
 
 export interface MatrixRowValue {
-  col0?: string; // First data column (Register in use)
-  col1?: string; // Second data column (Continuously updated)
-  col2?: string; // Third data column (Reviewed/checked)
+  col0?: string;
+  col1?: string;
+  col2?: string;
   [key: string]: string | undefined;
 }
 
@@ -46,8 +47,6 @@ export interface FormField {
   columns?: string[];
   rows?: MatrixRowDefinition[];
   placeholder?: string;
-
-  // PDF form extras
   followUpLabel?: string;
   tableRows?: string[];
   tableColumns?: string[];
@@ -116,13 +115,12 @@ interface UpdateLocalAnswersPayload {
 }
 
 interface UserAssignmentState {
-  // List view
   assignments: UserAssignment[];
   activeAssignment: UserAssignmentDetail | null;
   summary: AssignmentSummary | null;
-  
-  // UI State
+  myStation: Station | null;          // ← station for the logged-in user
   isLoading: boolean;
+  isLoadingMyStation: boolean;        // ← separate flag so it doesn't block the list
   isSaving: boolean;
   isSubmitting: boolean;
   error: string | null;
@@ -133,14 +131,15 @@ const initialState: UserAssignmentState = {
   assignments: [],
   activeAssignment: null,
   summary: null,
+  myStation: null,
   isLoading: false,
+  isLoadingMyStation: false,
   isSaving: false,
   isSubmitting: false,
   error: null,
   actionSuccess: false,
 };
 
-// Match the backend route prefix from app.use('/api/v1/user', userAssignmentRoutes)
 const USER_BASE = '/user';
 
 const getErrorMessage = (error: unknown): string => {
@@ -152,21 +151,15 @@ const getErrorMessage = (error: unknown): string => {
   return 'An unexpected error occurred';
 };
 
-// ─── MATRIX HELPER FUNCTIONS ──────────────────────────────────────────────
+// ─── MATRIX HELPERS ───────────────────────────────────────────────────────────
 
-/**
- * Initialize empty matrix data structure for a matrix field
- */
 export const initializeMatrixData = (field: FormField): MatrixData | null => {
   if (field.type !== 'matrix' || !field.rows) return null;
-  
   const matrixData: MatrixData = {};
-  
   field.rows.forEach((row: MatrixRowDefinition, idx: number) => {
-    const rowKey = row.isSectionHeader 
+    const rowKey = row.isSectionHeader
       ? `section_${row.name.replace(/\s+/g, '_')}`
       : `row_${idx}`;
-    
     matrixData[rowKey] = {
       type: row.isSectionHeader ? 'section' : 'row',
       label: row.name,
@@ -174,106 +167,83 @@ export const initializeMatrixData = (field: FormField): MatrixData | null => {
       indent: row.indent || 0,
       parentSection: row.parentSection || null,
       values: row.isSectionHeader ? {} : { col0: '', col1: '', col2: '' },
-      colspan: row.colspan
+      colspan: row.colspan,
     };
   });
-  
   return matrixData;
 };
 
-/**
- * Update a specific cell in a matrix field
- */
 export const updateMatrixCellValue = (
   matrixData: MatrixData,
   rowKey: string,
   colIndex: number,
-  value: string
+  value: string,
 ): MatrixData => {
   if (!matrixData[rowKey]) return matrixData;
-  
   return {
     ...matrixData,
     [rowKey]: {
       ...matrixData[rowKey],
-      values: {
-        ...matrixData[rowKey].values,
-        [`col${colIndex}`]: value
-      }
-    }
+      values: { ...matrixData[rowKey].values, [`col${colIndex}`]: value },
+    },
   };
 };
 
-/**
- * Get all rows for a specific section (including children)
- */
 export const getRowsBySection = (matrixData: MatrixData, sectionName: string): string[] => {
   const sectionKey = `section_${sectionName.replace(/\s+/g, '_')}`;
   if (!matrixData[sectionKey]) return [];
-  
   const rows: string[] = [];
   let foundSection = false;
-  
   for (const [rowKey, row] of Object.entries(matrixData)) {
-    if (rowKey === sectionKey) {
-      foundSection = true;
-    } else if (foundSection && row.parentSection === sectionName) {
-      rows.push(rowKey);
-    } else if (foundSection && row.type === 'section') {
-      foundSection = false;
-    }
+    if (rowKey === sectionKey) { foundSection = true; }
+    else if (foundSection && row.parentSection === sectionName) { rows.push(rowKey); }
+    else if (foundSection && row.type === 'section') { foundSection = false; }
   }
-  
   return rows;
 };
 
-/**
- * Check if a matrix field has any answers
- */
 export const hasMatrixAnswers = (matrixData: MatrixData | null | undefined): boolean => {
   if (!matrixData) return false;
-  
   return Object.values(matrixData).some((row: MatrixRow) => {
     if (row.type === 'section') return false;
-    const values = row.values;
-    return !!(values && (values.col0 || values.col1 || values.col2));
+    const v = row.values;
+    return !!(v && (v.col0 || v.col1 || v.col2));
   });
 };
 
-/**
- * Validate matrix field for required columns
- */
 export const validateMatrixField = (
   matrixData: MatrixData | null | undefined,
-  requiredColumns?: number[]
+  requiredColumns?: number[],
 ): { isValid: boolean; missingFields: string[] } => {
   if (!matrixData) return { isValid: true, missingFields: [] };
-  
   const missingFields: string[] = [];
-  const colsToCheck = requiredColumns || [0, 1, 2]; // Default check all columns
-  
-  // Remove the unused 'rowKey' parameter by using just the value
+  const colsToCheck = requiredColumns || [0, 1, 2];
   Object.values(matrixData).forEach((row: MatrixRow) => {
     if (row.type === 'section') return;
-    
     colsToCheck.forEach((colIdx: number) => {
-      const colKey = `col${colIdx}`;
-      const value = row.values?.[colKey];
+      const value = row.values?.[`col${colIdx}`];
       if (!value || value.trim() === '') {
         missingFields.push(`${row.label} - Column ${colIdx + 1}`);
       }
     });
   });
-  
   return { isValid: missingFields.length === 0, missingFields };
 };
 
-// ─── THUNKS ──────────────────────────────────────────────────────────────
+// ─── THUNKS ───────────────────────────────────────────────────────────────────
 
-/**
- * Fetch all assignments for the current user
- * Optional: filter by status (pending, in_progress, submitted)
- */
+export const fetchMyStation = createAsyncThunk<Station | null, void>(
+  'userAssignment/fetchMyStation',
+  async (_, { rejectWithValue }) => {
+    try {
+      const { data } = await axiosClient.get(`${USER_BASE}/station`);
+      return (data.station as Station) ?? null;
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
+
 export const fetchMyAssignments = createAsyncThunk<
   UserAssignment[],
   { status?: 'pending' | 'in_progress' | 'submitted' } | void
@@ -281,10 +251,9 @@ export const fetchMyAssignments = createAsyncThunk<
   try {
     const query = new URLSearchParams();
     if (params?.status) query.append('status', params.status);
-    const url = query.toString() 
+    const url = query.toString()
       ? `${USER_BASE}/assignments?${query}`
       : `${USER_BASE}/assignments`;
-    
     console.log('🔍 Fetching user assignments from:', url);
     const { data } = await axiosClient.get(url);
     console.log(`📦 Received ${data.assignments?.length || 0} assignments`);
@@ -294,39 +263,29 @@ export const fetchMyAssignments = createAsyncThunk<
   }
 });
 
-/**
- * Fetch a single assignment by ID with full form_json for filling
- */
-export const fetchMyAssignmentById = createAsyncThunk<
-  UserAssignmentDetail,
-  number
->('userAssignment/fetchMyAssignmentById', async (id, { rejectWithValue }) => {
-  try {
-    console.log(`🔍 Fetching assignment ${id} details`);
-    const { data } = await axiosClient.get(`${USER_BASE}/assignments/${id}`);
-    console.log(`✅ Assignment ${id} loaded:`, data.assignment.component_name);
-    
-    // Ensure matrix fields have proper structure
-    const assignment = data.assignment as UserAssignmentDetail;
-    if (assignment.form_json?.fields) {
-      assignment.form_json.fields.forEach((field: FormField) => {
-        if (field.type === 'matrix' && !assignment.answers?.[field.id]) {
-          // Initialize empty matrix if not exists
-          if (!assignment.answers) assignment.answers = {};
-          assignment.answers[field.id] = initializeMatrixData(field);
-        }
-      });
+export const fetchMyAssignmentById = createAsyncThunk<UserAssignmentDetail, number>(
+  'userAssignment/fetchMyAssignmentById',
+  async (id, { rejectWithValue }) => {
+    try {
+      console.log(`🔍 Fetching assignment ${id} details`);
+      const { data } = await axiosClient.get(`${USER_BASE}/assignments/${id}`);
+      console.log(`✅ Assignment ${id} loaded:`, data.assignment.component_name);
+      const assignment = data.assignment as UserAssignmentDetail;
+      if (assignment.form_json?.fields) {
+        assignment.form_json.fields.forEach((field: FormField) => {
+          if (field.type === 'matrix' && !assignment.answers?.[field.id]) {
+            if (!assignment.answers) assignment.answers = {};
+            assignment.answers[field.id] = initializeMatrixData(field);
+          }
+        });
+      }
+      return assignment;
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
     }
-    
-    return assignment;
-  } catch (error) {
-    return rejectWithValue(getErrorMessage(error));
-  }
-});
+  },
+);
 
-/**
- * Save draft answers without submitting
- */
 export const saveAssignmentDraft = createAsyncThunk<
   SaveDraftResponse,
   { id: number; answers: Record<string, unknown> }
@@ -341,20 +300,11 @@ export const saveAssignmentDraft = createAsyncThunk<
   }
 });
 
-/**
- * Submit final answers with validation
- */
 export const submitAssignment = createAsyncThunk<
   UserAssignmentDetail,
   { id: number; answers: Record<string, unknown>; validateMatrix?: boolean }
->('userAssignment/submitAssignment', async ({ id, answers, validateMatrix = true }, { rejectWithValue }) => {
+>('userAssignment/submitAssignment', async ({ id, answers }, { rejectWithValue }) => {
   try {
-    // Optional: Frontend validation before submission
-    if (validateMatrix) {
-      // Add validation logic here if needed
-      console.log(`🔍 Validating assignment ${id} before submission`);
-    }
-    
     console.log(`📤 Submitting assignment ${id}`);
     const { data } = await axiosClient.post(`${USER_BASE}/assignments/${id}/submit`, { answers });
     console.log(`✅ Assignment ${id} submitted successfully`);
@@ -364,69 +314,53 @@ export const submitAssignment = createAsyncThunk<
   }
 });
 
-/**
- * Get assignment status only (lightweight)
- */
-export const getAssignmentStatus = createAsyncThunk<
-  AssignmentStatus,
-  number
->('userAssignment/getAssignmentStatus', async (id, { rejectWithValue }) => {
-  try {
-    const { data } = await axiosClient.get(`${USER_BASE}/assignments/${id}/status`);
-    return data.status as AssignmentStatus;
-  } catch (error) {
-    return rejectWithValue(getErrorMessage(error));
-  }
-});
+export const getAssignmentStatus = createAsyncThunk<AssignmentStatus, number>(
+  'userAssignment/getAssignmentStatus',
+  async (id, { rejectWithValue }) => {
+    try {
+      const { data } = await axiosClient.get(`${USER_BASE}/assignments/${id}/status`);
+      return data.status as AssignmentStatus;
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
 
-/**
- * Get summary counts by status
- */
-export const getAssignmentSummary = createAsyncThunk<
-  AssignmentSummary,
-  void
->('userAssignment/getAssignmentSummary', async (_, { rejectWithValue }) => {
-  try {
-    const { data } = await axiosClient.get(`${USER_BASE}/assignments/summary`);
-    console.log('📊 Assignment summary:', data.summary);
-    return data.summary as AssignmentSummary;
-  } catch (error) {
-    return rejectWithValue(getErrorMessage(error));
-  }
-});
+export const getAssignmentSummary = createAsyncThunk<AssignmentSummary, void>(
+  'userAssignment/getAssignmentSummary',
+  async (_, { rejectWithValue }) => {
+    try {
+      const { data } = await axiosClient.get(`${USER_BASE}/assignments/summary`);
+      console.log('📊 Assignment summary:', data.summary);
+      return data.summary as AssignmentSummary;
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
 
-// ─── SLICE ──────────────────────────────────────────────────────────────
+// ─── SLICE ────────────────────────────────────────────────────────────────────
 
 const userAssignmentSlice = createSlice({
   name: 'userAssignment',
   initialState,
   reducers: {
-    clearUserAssignmentError: (state) => {
-      state.error = null;
-    },
-    resetUserAssignmentSuccess: (state) => {
-      state.actionSuccess = false;
-    },
-    clearActiveAssignment: (state) => {
-      state.activeAssignment = null;
-    },
+    clearUserAssignmentError: (state) => { state.error = null; },
+    resetUserAssignmentSuccess: (state) => { state.actionSuccess = false; },
+    clearActiveAssignment: (state) => { state.activeAssignment = null; },
     updateLocalAnswers: (state, action: PayloadAction<UpdateLocalAnswersPayload>) => {
       const { fieldId, value } = action.payload;
       if (state.activeAssignment) {
-        if (!state.activeAssignment.answers) {
-          state.activeAssignment.answers = {};
-        }
+        if (!state.activeAssignment.answers) state.activeAssignment.answers = {};
         state.activeAssignment.answers[fieldId] = value;
       }
     },
-    // Matrix-specific actions
     updateMatrixCell: (state, action: PayloadAction<UpdateMatrixCellPayload>) => {
       const { fieldId, rowKey, colIndex, value } = action.payload;
       if (state.activeAssignment?.answers) {
         const matrixData = state.activeAssignment.answers[fieldId] as MatrixData;
         if (matrixData) {
-          const updatedMatrix = updateMatrixCellValue(matrixData, rowKey, colIndex, value);
-          state.activeAssignment.answers[fieldId] = updatedMatrix;
+          state.activeAssignment.answers[fieldId] = updateMatrixCellValue(matrixData, rowKey, colIndex, value);
         }
       }
     },
@@ -439,7 +373,23 @@ const userAssignmentSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // ── Fetch My Assignments ──────────────────────────────────────────────
+
+      // ── fetchMyStation ────────────────────────────────────────────────────
+      .addCase(fetchMyStation.pending, (state) => {
+        state.isLoadingMyStation = true;
+        state.error = null;
+      })
+      .addCase(fetchMyStation.fulfilled, (state, action: PayloadAction<Station | null>) => {
+        state.isLoadingMyStation = false;
+        state.myStation = action.payload;
+      })
+      .addCase(fetchMyStation.rejected, (state) => {
+        // Non-fatal — banner simply won't show
+        state.isLoadingMyStation = false;
+        state.myStation = null;
+      })
+
+      // ── fetchMyAssignments ────────────────────────────────────────────────
       .addCase(fetchMyAssignments.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -453,7 +403,7 @@ const userAssignmentSlice = createSlice({
         state.error = action.payload as string;
       })
 
-      // ── Fetch My Assignment By ID ─────────────────────────────────────────
+      // ── fetchMyAssignmentById ─────────────────────────────────────────────
       .addCase(fetchMyAssignmentById.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -461,8 +411,6 @@ const userAssignmentSlice = createSlice({
       .addCase(fetchMyAssignmentById.fulfilled, (state, action: PayloadAction<UserAssignmentDetail>) => {
         state.isLoading = false;
         state.activeAssignment = action.payload;
-        
-        // Update the status in the list if it changed (pending → in_progress)
         const index = state.assignments.findIndex(a => a.id === action.payload.id);
         if (index !== -1 && state.assignments[index].status !== action.payload.status) {
           state.assignments[index].status = action.payload.status;
@@ -473,7 +421,7 @@ const userAssignmentSlice = createSlice({
         state.error = action.payload as string;
       })
 
-      // ── Save Draft ────────────────────────────────────────────────────────
+      // ── saveAssignmentDraft ───────────────────────────────────────────────
       .addCase(saveAssignmentDraft.pending, (state) => {
         state.isSaving = true;
         state.error = null;
@@ -482,19 +430,13 @@ const userAssignmentSlice = createSlice({
       .addCase(saveAssignmentDraft.fulfilled, (state, action: PayloadAction<SaveDraftResponse>) => {
         state.isSaving = false;
         state.actionSuccess = true;
-        
-        // Update active assignment answers and status
-        if (state.activeAssignment && state.activeAssignment.id === action.payload.id) {
+        if (state.activeAssignment?.id === action.payload.id) {
           state.activeAssignment.answers = action.payload.answers;
           state.activeAssignment.status = action.payload.status;
         }
-        
-        // Update in list
         const index = state.assignments.findIndex(a => a.id === action.payload.id);
-        if (index !== -1) {
-          if (state.assignments[index].status !== action.payload.status) {
-            state.assignments[index].status = action.payload.status;
-          }
+        if (index !== -1 && state.assignments[index].status !== action.payload.status) {
+          state.assignments[index].status = action.payload.status;
         }
       })
       .addCase(saveAssignmentDraft.rejected, (state, action) => {
@@ -503,7 +445,7 @@ const userAssignmentSlice = createSlice({
         state.actionSuccess = false;
       })
 
-      // ── Submit Assignment ─────────────────────────────────────────────────
+      // ── submitAssignment ──────────────────────────────────────────────────
       .addCase(submitAssignment.pending, (state) => {
         state.isSubmitting = true;
         state.error = null;
@@ -513,8 +455,6 @@ const userAssignmentSlice = createSlice({
         state.isSubmitting = false;
         state.actionSuccess = true;
         state.activeAssignment = action.payload;
-        
-        // Update in list
         const index = state.assignments.findIndex(a => a.id === action.payload.id);
         if (index !== -1) {
           state.assignments[index].status = 'submitted';
@@ -527,7 +467,7 @@ const userAssignmentSlice = createSlice({
         state.actionSuccess = false;
       })
 
-      // ── Get Assignment Status ────────────────────────────────────────────
+      // ── getAssignmentStatus ───────────────────────────────────────────────
       .addCase(getAssignmentStatus.fulfilled, (state, action: PayloadAction<AssignmentStatus>) => {
         const index = state.assignments.findIndex(a => a.id === action.payload.id);
         if (index !== -1) {
@@ -536,8 +476,7 @@ const userAssignmentSlice = createSlice({
             state.assignments[index].submitted_at = action.payload.submitted_at;
           }
         }
-        
-        if (state.activeAssignment && state.activeAssignment.id === action.payload.id) {
+        if (state.activeAssignment?.id === action.payload.id) {
           state.activeAssignment.status = action.payload.status;
           if (action.payload.submitted_at) {
             state.activeAssignment.submitted_at = action.payload.submitted_at;
@@ -545,7 +484,7 @@ const userAssignmentSlice = createSlice({
         }
       })
 
-      // ── Get Assignment Summary ───────────────────────────────────────────
+      // ── getAssignmentSummary ──────────────────────────────────────────────
       .addCase(getAssignmentSummary.pending, (state) => {
         state.isLoading = true;
       })

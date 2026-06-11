@@ -1,6 +1,7 @@
 // src/store/slices/assignmentSlice.ts
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axiosClient from '../../api/api';
+import type { Station } from './stationSlice';
 
 // ─── TYPES ──────────────────────────────────────────────────────────────
 
@@ -52,11 +53,15 @@ interface AssignmentState {
   // Admin assignments
   assignments: Assignment[];
   activeAssignment: Assignment | null;
-  
+
   // User assignments
   myAssignments: UserAssignment[];
   activeMyAssignment: UserAssignmentDetail | null;
-  
+
+  // Station (user-scoped)
+  myStation: Station | null;
+  isLoadingMyStation: boolean;
+
   // UI state
   isLoading: boolean;
   isSaving: boolean;
@@ -69,6 +74,8 @@ const initialState: AssignmentState = {
   activeAssignment: null,
   myAssignments: [],
   activeMyAssignment: null,
+  myStation: null,
+  isLoadingMyStation: false,
   isLoading: false,
   isSaving: false,
   error: null,
@@ -76,7 +83,7 @@ const initialState: AssignmentState = {
 };
 
 const ADMIN_BASE = '/spotcheck-admin/assignments';
-const USER_BASE = '/spotcheck-admin/users';
+const USER_BASE  = '/user';
 
 const getErrorMessage = (error: unknown): string => {
   if (error && typeof error === 'object' && 'response' in error) {
@@ -89,16 +96,16 @@ const getErrorMessage = (error: unknown): string => {
 
 // ─── ADMIN ASSIGNMENT THUNKS ─────────────────────────────────────────────
 
-export const fetchAssignments = createAsyncThunk <
+export const fetchAssignments = createAsyncThunk<
   Assignment[],
-  { user_id?: number; component_id?: number; status?: string; station_id?: number }  // ← add
+  { user_id?: number; component_id?: number; status?: string; station_id?: number }
 >('assignment/fetchAssignments', async (params, { rejectWithValue }) => {
   try {
     const query = new URLSearchParams();
     if (params.user_id)      query.append('user_id',      params.user_id.toString());
     if (params.component_id) query.append('component_id', params.component_id.toString());
     if (params.status)       query.append('status',       params.status);
-    if (params.station_id)   query.append('station_id',   params.station_id.toString());  // ← add
+    if (params.station_id)   query.append('station_id',   params.station_id.toString());
     const url = query.toString() ? `${ADMIN_BASE}/get?${query}` : `${ADMIN_BASE}/get`;
     const { data } = await axiosClient.get(url);
     return data.assignments as Assignment[];
@@ -136,11 +143,7 @@ export const updateAssignment = createAsyncThunk<
   { id: number; status?: 'pending' | 'in_progress' | 'submitted'; user_id?: number; answers?: Record<string, unknown> }
 >('assignment/updateAssignment', async ({ id, status, user_id, answers }, { rejectWithValue }) => {
   try {
-    const { data } = await axiosClient.patch(`${ADMIN_BASE}/update/${id}`, {
-      status,
-      user_id,
-      answers,
-    });
+    const { data } = await axiosClient.patch(`${ADMIN_BASE}/update/${id}`, { status, user_id, answers });
     return data.assignment as Assignment;
   } catch (error) {
     return rejectWithValue(getErrorMessage(error));
@@ -159,7 +162,7 @@ export const deleteAssignment = createAsyncThunk<number, number>(
   }
 );
 
-// ─── USER ASSIGNMENT THUNKS ──────────────────────────────────────────────
+
 
 export const fetchMyAssignments = createAsyncThunk<
   UserAssignment[],
@@ -233,7 +236,10 @@ const assignmentSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // ── Fetch Assignments (Admin) ──────────────────────────────────────
+
+  
+
+      // ── Fetch Assignments (Admin) ───────────────────────────────────────
       .addCase(fetchAssignments.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -247,7 +253,7 @@ const assignmentSlice = createSlice({
         state.error = action.payload as string;
       })
 
-      // ── Fetch Assignment By ID (Admin) ─────────────────────────────────
+      // ── Fetch Assignment By ID (Admin) ──────────────────────────────────
       .addCase(fetchAssignmentById.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -261,7 +267,7 @@ const assignmentSlice = createSlice({
         state.error = action.payload as string;
       })
 
-      // ── Create Assignment ──────────────────────────────────────────────
+      // ── Create Assignment ───────────────────────────────────────────────
       .addCase(createAssignment.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -277,7 +283,7 @@ const assignmentSlice = createSlice({
         state.error = action.payload as string;
       })
 
-      // ── Update Assignment ──────────────────────────────────────────────
+      // ── Update Assignment ───────────────────────────────────────────────
       .addCase(updateAssignment.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -288,16 +294,14 @@ const assignmentSlice = createSlice({
         state.actionSuccess = true;
         const index = state.assignments.findIndex(a => a.id === action.payload.id);
         if (index !== -1) state.assignments[index] = action.payload;
-        if (state.activeAssignment?.id === action.payload.id) {
-          state.activeAssignment = action.payload;
-        }
+        if (state.activeAssignment?.id === action.payload.id) state.activeAssignment = action.payload;
       })
       .addCase(updateAssignment.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
       })
 
-      // ── Delete Assignment ──────────────────────────────────────────────
+      // ── Delete Assignment ───────────────────────────────────────────────
       .addCase(deleteAssignment.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -314,7 +318,7 @@ const assignmentSlice = createSlice({
         state.error = action.payload as string;
       })
 
-      // ── Fetch My Assignments (User) ────────────────────────────────────
+      // ── Fetch My Assignments (User) ─────────────────────────────────────
       .addCase(fetchMyAssignments.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -328,7 +332,7 @@ const assignmentSlice = createSlice({
         state.error = action.payload as string;
       })
 
-      // ── Fetch My Assignment By ID (User) ───────────────────────────────
+      // ── Fetch My Assignment By ID (User) ────────────────────────────────
       .addCase(fetchMyAssignmentById.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -338,10 +342,7 @@ const assignmentSlice = createSlice({
         state.activeMyAssignment = action.payload;
         const index = state.myAssignments.findIndex(a => a.id === action.payload.id);
         if (index !== -1) {
-          state.myAssignments[index] = {
-            ...state.myAssignments[index],
-            status: action.payload.status,
-          };
+          state.myAssignments[index] = { ...state.myAssignments[index], status: action.payload.status };
         }
       })
       .addCase(fetchMyAssignmentById.rejected, (state, action) => {
@@ -349,7 +350,7 @@ const assignmentSlice = createSlice({
         state.error = action.payload as string;
       })
 
-      // ── Save My Assignment Answers (Auto-save) ─────────────────────────
+      // ── Save My Assignment Answers ──────────────────────────────────────
       .addCase(saveMyAssignmentAnswers.pending, (state) => {
         state.isSaving = true;
         state.error = null;
@@ -358,7 +359,7 @@ const assignmentSlice = createSlice({
         state.isSaving = false;
         if (state.activeMyAssignment?.id === action.payload.id) {
           state.activeMyAssignment.answers = action.payload.answers;
-          state.activeMyAssignment.status = action.payload.status;
+          state.activeMyAssignment.status  = action.payload.status;
         }
       })
       .addCase(saveMyAssignmentAnswers.rejected, (state, action) => {
@@ -366,7 +367,7 @@ const assignmentSlice = createSlice({
         state.error = action.payload as string;
       })
 
-      // ── Submit My Assignment ───────────────────────────────────────────
+      // ── Submit My Assignment ────────────────────────────────────────────
       .addCase(submitMyAssignment.pending, (state) => {
         state.isLoading = true;
         state.error = null;

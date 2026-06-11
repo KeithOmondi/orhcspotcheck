@@ -9,13 +9,14 @@ export interface Station {
   name: string;
   code: string;
   created_at: string;
-  updated_at: string;
 }
 
 interface StationState {
   stations: Station[];
   activeStation: Station | null;
+  myStation: Station | null;
   isLoading: boolean;
+  isLoadingMyStation: boolean;
   error: string | null;
   actionSuccess: boolean;
 }
@@ -23,7 +24,9 @@ interface StationState {
 const initialState: StationState = {
   stations: [],
   activeStation: null,
+  myStation: null,
   isLoading: false,
+  isLoadingMyStation: false,
   error: null,
   actionSuccess: false,
 };
@@ -38,6 +41,8 @@ const getErrorMessage = (error: unknown): string => {
 };
 
 // ─── Thunks ──────────────────────────────────────────────────────────────────
+
+
 
 export const fetchStations = createAsyncThunk<Station[], void>(
   'station/fetchStations',
@@ -114,10 +119,16 @@ const stationSlice = createSlice({
     clearActiveStation: (state) => {
       state.activeStation = null;
     },
+    clearMyStation: (state) => {
+      state.myStation = null;
+    },
   },
   extraReducers: (builder) => {
     builder
-      // fetchStations
+
+    
+
+      // ── fetchStations ───────────────────────────────────────────────────────
       .addCase(fetchStations.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -130,7 +141,8 @@ const stationSlice = createSlice({
         state.isLoading = false;
         state.error = action.payload as string;
       })
-      // fetchStationById
+
+      // ── fetchStationById ────────────────────────────────────────────────────
       .addCase(fetchStationById.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -144,7 +156,8 @@ const stationSlice = createSlice({
         state.isLoading = false;
         state.error = action.payload as string;
       })
-      // createStation
+
+      // ── createStation ───────────────────────────────────────────────────────
       .addCase(createStation.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -153,13 +166,14 @@ const stationSlice = createSlice({
       .addCase(createStation.fulfilled, (state, action) => {
         state.isLoading = false;
         state.actionSuccess = true;
-        state.stations.unshift(action.payload); // newest first
+        state.stations.unshift(action.payload);
       })
       .addCase(createStation.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
       })
-      // updateStation
+
+      // ── updateStation ───────────────────────────────────────────────────────
       .addCase(updateStation.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -171,12 +185,14 @@ const stationSlice = createSlice({
         const index = state.stations.findIndex((s) => s.id === action.payload.id);
         if (index !== -1) state.stations[index] = action.payload;
         if (state.activeStation?.id === action.payload.id) state.activeStation = action.payload;
+        if (state.myStation?.id === action.payload.id) state.myStation = action.payload;
       })
       .addCase(updateStation.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
       })
-      // deleteStation
+
+      // ── deleteStation ───────────────────────────────────────────────────────
       .addCase(deleteStation.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -187,6 +203,7 @@ const stationSlice = createSlice({
         state.actionSuccess = true;
         state.stations = state.stations.filter((s) => s.id !== action.payload);
         if (state.activeStation?.id === action.payload) state.activeStation = null;
+        if (state.myStation?.id === action.payload) state.myStation = null;
       })
       .addCase(deleteStation.rejected, (state, action) => {
         state.isLoading = false;
@@ -195,5 +212,11 @@ const stationSlice = createSlice({
   },
 });
 
-export const { clearStationError, resetStationSuccess, clearActiveStation } = stationSlice.actions;
+export const {
+  clearStationError,
+  resetStationSuccess,
+  clearActiveStation,
+  clearMyStation,
+} = stationSlice.actions;
+
 export default stationSlice.reducer;
